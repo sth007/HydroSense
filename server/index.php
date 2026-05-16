@@ -5,7 +5,28 @@ const DEFAULT_API_KEY = 'change-me';
 const HISTORY_LIMIT = 240;
 
 $dataDir = __DIR__ . '/data';
-$apiKey = getenv('HYDROSENSE_API_KEY') ?: DEFAULT_API_KEY;
+
+function loadEnvFile(string $path): array
+{
+    if (!is_file($path)) {
+        return [];
+    }
+
+    $env = [];
+    foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) {
+            continue;
+        }
+
+        [$key, $value] = array_map('trim', explode('=', $line, 2));
+        $env[$key] = trim($value, "\"'");
+    }
+    return $env;
+}
+
+$env = loadEnvFile(__DIR__ . '/.env');
+$apiKey = getenv('HYDROSENSE_API_KEY') ?: ($env['HYDROSENSE_API_KEY'] ?? DEFAULT_API_KEY);
 
 if (!is_dir($dataDir)) {
     mkdir($dataDir, 0775, true);

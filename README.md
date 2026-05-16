@@ -17,7 +17,19 @@ git checkout main
 Start the local PHP dashboard/API server:
 
 ```sh
-HYDROSENSE_API_KEY=change-me php -S 0.0.0.0:8077 -t server
+php -S 0.0.0.0:8077 -t server
+```
+
+Create the local API key config from the example:
+
+```sh
+cp server/.env.example server/.env
+```
+
+Then edit `server/.env`:
+
+```text
+HYDROSENSE_API_KEY=change-me
 ```
 
 Open the dashboard:
@@ -33,7 +45,7 @@ http://YOUR_SERVER_IP:8077/index.php
 API key: change-me
 ```
 
-`YOUR_SERVER_IP` must be the LAN IP of the computer/server running PHP, not `127.0.0.1`. Use the same value for the ESP32 API key and `HYDROSENSE_API_KEY`. Use a different `DEVICE_ID` for each ESP32/pump. The dashboard automatically adds every device that sends telemetry.
+`YOUR_SERVER_IP` must be the LAN IP of the computer/server running PHP, not `127.0.0.1`. Use the same value for the ESP32 API key and `HYDROSENSE_API_KEY` in `server/.env`. Use a different `DEVICE_ID` for each ESP32/pump. The dashboard automatically adds every device that sends telemetry.
 
 WiFi is configured on the ESP32 itself. If it cannot connect, it opens a hotspot:
 

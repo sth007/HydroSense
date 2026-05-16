@@ -5,3 +5,4 @@ sdkconfig.esp32-c6-devkitc-1
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch/
+server/.env
