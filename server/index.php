@@ -161,6 +161,11 @@ function commandPath(string $dataDir, string $deviceId): string
     return $dataDir . '/command-' . preg_replace('/[^a-zA-Z0-9_.-]/', '-', $deviceId) . '.json';
 }
 
+function gpioConfigPath(string $dataDir, string $deviceId): string
+{
+    return $dataDir . '/gpio-' . deviceFileId($deviceId) . '.json';
+}
+
 function deviceFileId(string $deviceId): string
 {
     return preg_replace('/[^a-zA-Z0-9_.-]/', '-', $deviceId) ?: 'hydrosense-esp32';
@@ -272,6 +277,34 @@ if ($api === 'ack') {
     jsonResponse(['ok' => true]);
 }
 
+if ($api === 'gpio_config') {
+    requireApiKey($apiKey);
+    $deviceId = textValue($_GET, 'device_id', 'hydrosense-esp32');
+    $path = gpioConfigPath($dataDir, $deviceId);
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $payload = requestJson();
+        $soilSensorPins = textValue($payload, 'soil_sensor_pins', '');
+        $relayPins = textValue($payload, 'relay_pins', '');
+
+        writeJsonFile($path, [
+            'soil_sensor_pins' => $soilSensorPins,
+            'relay_pins' => $relayPins,
+            'updated_at' => gmdate('c'),
+        ]);
+        jsonResponse(['ok' => true, 'message' => 'GPIO configuration saved.']);
+    } else { // GET request
+        $config = readJsonFile($path, []);
+        jsonResponse([
+            'ok' => true,
+            // Provide defaults if not found in file (matching src/main.cpp defaults)
+            'soil_sensor_pins' => $config['soil_sensor_pins'] ?? '34,35,36,39',
+            'relay_pins' => $config['relay_pins'] ?? '26,25,32,33',
+        ]);
+    }
+}
+
+
 $dashboardError = '';
 $dashboardKey = (string) ($_POST['api_key'] ?? $_GET['api_key'] ?? '');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pump'])) {
@@ -295,6 +328,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pump'])) {
     }
 }
 
+// Add handling for GPIO config POST from dashboard
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_gpio_config') {
+    if (!hash_equals($apiKey, $dashboardKey)) {
+        $dashboardError = 'API key ist falsch.';
+    } else {
+        $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
+        $soilSensorPins = textValue($_POST, 'soil_sensor_pins', '');
+        $relayPins = textValue($_POST, 'relay_pins', '');
+
+        writeJsonFile(gpioConfigPath($dataDir, $deviceId), [
+            'soil_sensor_pins' => $soilSensorPins,
+            'relay_pins' => $relayPins,
+            'updated_at' => gmdate('c'),
+        ]);
+        // Redirect to refresh the page and show updated values, anchor to the device card
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+        exit;
+    }
+}
+
 $devices = loadDevices($dataDir);
 $deviceCount = count($devices);
 $onlineCount = 0;
@@ -313,8 +366,8 @@ foreach ($devices as $device) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="15">
   <title>HydroSense</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
     :root { color-scheme: light; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: #f4f7f6; color: #17211d; }
     body { margin: 0; }
@@ -323,6 +376,7 @@ foreach ($devices as $device) {
     h1 { margin: 0; font-size: clamp(28px, 5vw, 46px); line-height: 1; letter-spacing: 0; }
     .muted { color: #63736c; }
     .summary { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    .refresh-control { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 8px; font-size: 13px; color: #63736c; width: 100%; }
     .pill { background: #fff; border: 1px solid #d9e4df; border-radius: 999px; padding: 8px 12px; font-weight: 700; }
     .pump-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 14px; align-items: start; }
     .card { background: #fff; border: 1px solid #d9e4df; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgb(20 40 32 / 5%); }
@@ -363,13 +417,18 @@ foreach ($devices as $device) {
       <div class="pill"><?= $deviceCount ?> Pumpen</div>
       <div class="pill"><?= $onlineCount ?> online</div>
       <div class="pill"><?= $recentCount ?> vor 15 Min.</div>
+      <div class="refresh-control">
+        <input type="checkbox" id="autoRefreshToggle" checked>
+        <label for="autoRefreshToggle">Auto-Update</label>
+        <span id="refreshCountdown" style="min-width: 2ch; text-align: right;">15</span>s
+      </div>
     </div>
   </header>
 
   <?php if ($dashboardError): ?><p class="error"><?= htmlspecialchars($dashboardError) ?></p><?php endif; ?>
 
   <section class="pump-grid">
-    <?php if (!$devices): ?>
+    <?php if (empty($devices)): ?>
       <div class="card empty">Noch keine Pumpe hat sich per API gemeldet.</div>
     <?php endif; ?>
     <?php foreach ($devices as $device): ?>
@@ -379,9 +438,13 @@ foreach ($devices as $device) {
         $channels = normalizeChannels($device);
         $history = loadHistory(historyPath($dataDir, $deviceId));
         $command = readJsonFile(commandPath($dataDir, $deviceId), []);
+        $gpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
+            'soil_sensor_pins' => '34,35,36,39', // Default from src/main.cpp
+            'relay_pins' => '26,25,32,33',     // Default from src/main.cpp
+        ]);
         $canvasId = 'history-' . preg_replace('/[^a-zA-Z0-9_-]/', '-', $deviceId);
       ?>
-      <article class="card">
+      <article class="card" id="device-<?= htmlspecialchars($deviceId) ?>">
         <div class="pump-head">
           <div class="pump-title">
             <h2><?= htmlspecialchars($deviceId) ?></h2>
@@ -441,6 +504,25 @@ foreach ($devices as $device) {
             </section>
           <?php endforeach; ?>
         </div>
+
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+        <section class="gpio-config">
+          <h3>GPIO Einstellungen</h3>
+          <form method="post">
+            <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+            <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+            <input type="hidden" name="action" value="save_gpio_config">
+            <label for="soil_<?= htmlspecialchars($deviceId) ?>">Feuchtigkeitssensor Pins (Komma-getrennt)</label>
+            <input id="soil_<?= htmlspecialchars($deviceId) ?>" name="soil_sensor_pins" type="text" value="<?= htmlspecialchars($gpioConfig['soil_sensor_pins'] ?? '34,35,36,39') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+            <label for="relay_<?= htmlspecialchars($deviceId) ?>">Relay Pins (Komma-getrennt)</label>
+            <input id="relay_<?= htmlspecialchars($deviceId) ?>" name="relay_pins" type="text" value="<?= htmlspecialchars($gpioConfig['relay_pins'] ?? '26,25,32,33') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+            <button type="submit" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>GPIO Einstellungen speichern</button>
+          </form>
+          <?php if ($state['key'] === 'offline'): ?>
+            <p class="muted" style="margin-top: 10px;">Gerät ist offline. GPIO Einstellungen können nicht geändert werden.</p>
+          <?php endif; ?>
+        </div>
         <p class="muted">Letzter Befehl: Kanal <?= (int) (($command['channel'] ?? 0) + 1) ?> · <?= htmlspecialchars($command['pump'] ?? 'keiner') ?> <?= empty($command['acked_at']) ? '' : '· bestaetigt' ?></p>
       </article>
     <?php endforeach; ?>
@@ -448,38 +530,77 @@ foreach ($devices as $device) {
 </main>
 
 <script>
-for (const canvas of document.querySelectorAll('.history-canvas')) {
-  const historyData = JSON.parse(canvas.dataset.history || '[]');
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width;
-  const h = canvas.height;
-  const pad = 28;
-  ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = '#d7e1dc';
-  ctx.lineWidth = 1;
-  ctx.font = '12px system-ui';
-  ctx.fillStyle = '#63736c';
-  for (const p of [0, 50, 100]) {
-    const y = h - pad - (p / 100) * (h - pad * 2);
-    ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - 8, y);
-    ctx.stroke();
-    ctx.fillText(`${p}%`, 2, y + 4);
-  }
-  if (historyData.length > 1) {
-    ctx.strokeStyle = '#1d6f54';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    historyData.forEach((item, index) => {
-      const x = pad + index * (w - pad - 8) / (historyData.length - 1);
-      const y = h - pad - Math.max(0, Math.min(100, item.moisture_percent || 0)) / 100 * (h - pad * 2);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+$(function() {
+  function initCharts() {
+    $('.history-canvas').each(function() {
+      const historyData = $(this).data('history') || [];
+      const ctx = this.getContext('2d');
+      const w = this.width;
+      const h = this.height;
+      const pad = 28;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = '#d7e1dc';
+      ctx.lineWidth = 1;
+      ctx.font = '12px system-ui';
+      ctx.fillStyle = '#63736c';
+      for (const p of [0, 50, 100]) {
+        const y = h - pad - (p / 100) * (h - pad * 2);
+        ctx.beginPath();
+        ctx.moveTo(pad, y);
+        ctx.lineTo(w - 8, y);
+        ctx.stroke();
+        ctx.fillText(`${p}%`, 2, y + 4);
+      }
+      if (historyData.length > 1) {
+        ctx.strokeStyle = '#1d6f54';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        historyData.forEach((item, index) => {
+          const x = pad + index * (w - pad - 8) / (historyData.length - 1);
+          const y = h - pad - Math.max(0, Math.min(100, item.moisture_percent || 0)) / 100 * (h - pad * 2);
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
     });
-    ctx.stroke();
   }
-}
+
+  initCharts();
+
+  let timeLeft = 15;
+  const $countdown = $('#refreshCountdown');
+  const $toggle = $('#autoRefreshToggle');
+
+  setInterval(() => {
+    if (!$toggle.is(':checked')) return;
+    timeLeft--;
+    if (timeLeft <= 0) {
+      timeLeft = 15;
+      refreshData();
+    }
+    $countdown.text(timeLeft);
+  }, 1000);
+
+  function refreshData() {
+    $.get(window.location.href, function(data) {
+      const $newDoc = $($.parseHTML(data));
+      
+      // Update summary metrics
+      $('.summary .pill').each(function(i) {
+        $(this).html($newDoc.find('.summary .pill').eq(i).html());
+      });
+
+      // Update pump cards if user isn't typing
+      if (!$(document.activeElement).is('input, textarea')) {
+        $('.pump-grid').html($newDoc.find('.pump-grid').html());
+        initCharts();
+      }
+    }).fail(function(err) {
+      console.error('Auto-refresh failed:', err);
+    });
+  }
+});
 </script>
 </body>
 </html>

@@ -10,11 +10,11 @@
 constexpr uint8_t CHANNEL_COUNT = 4;
 
 // ESP32 ADC1 pins. ADC1 keeps working while WiFi is active.
-constexpr uint8_t SOIL_SENSOR_PINS[CHANNEL_COUNT] = {34, 35, 36, 39};
+uint8_t g_soilSensorPins[CHANNEL_COUNT] = {34, 35, 36, 39};
 
 // Relay/MOSFET gate pins. Avoid GPIO0, GPIO2, GPIO12, GPIO15, GPIO1, GPIO3,
 // and flash pins GPIO6-GPIO11 on classic ESP32 boards.
-constexpr uint8_t RELAY_PINS[CHANNEL_COUNT] = {26, 25, 32, 33};
+uint8_t g_relayPins[CHANNEL_COUNT] = {26, 25, 32, 33};
 
 // This relay board is active LOW: GPIO LOW -> relay ON, GPIO HIGH -> relay OFF.
 constexpr bool RELAY_ACTIVE_LOW = true;
@@ -69,6 +69,7 @@ ChannelState channels[CHANNEL_COUNT];
 unsigned long lastSensorReadMs = 0;
 unsigned long lastServerPostMs = 0;
 unsigned long lastCommandPollMs = 0;
+unsigned long lastGpioConfigPollMs = 0;
 uint32_t lastCommandId = 0;
 int lastBatteryAdcRaw = 0;
 uint16_t lastBatteryPinMilliVolts = 0;
@@ -85,6 +86,8 @@ Preferences preferences;
 WebServer configServer(80);
 
 void connectWifi();
+void loadGpioConfig();
+void saveGpioConfig(const String& soilPinsStr, const String& relayPinsStr);
 void startConfigAp();
 
 const char *pumpModeValue(PumpMode mode) {
@@ -104,7 +107,7 @@ void relayWrite(uint8_t channel, bool enabled) {
     return;
   }
   const bool relayLevel = RELAY_ACTIVE_LOW ? !enabled : enabled;
-  digitalWrite(RELAY_PINS[channel], relayLevel ? HIGH : LOW);
+  digitalWrite(g_relayPins[channel], relayLevel ? HIGH : LOW);
 }
 
 void setPump(uint8_t channel, bool enabled) {
@@ -126,7 +129,7 @@ void setPump(uint8_t channel, bool enabled) {
 void initPumpsOff() {
   for (uint8_t channel = 0; channel < CHANNEL_COUNT; ++channel) {
     channels[channel].pumpOn = false;
-    relayWrite(channel, false);
+    relayWrite(channel, false); // Uses g_relayPins
     channels[channel].pumpStoppedMs = millis() - PUMP_COOLDOWN_MS;
   }
 }
@@ -143,7 +146,7 @@ int rawToMoisturePercent(uint8_t channel, int raw) {
 int readSoilRaw(uint8_t channel) {
   constexpr uint8_t samples = 12;
   uint32_t sum = 0;
-  const uint8_t pin = SOIL_SENSOR_PINS[channel];
+  const uint8_t pin = g_soilSensorPins[channel];
 
   for (uint8_t i = 0; i < ADC_DUMMY_READS; ++i) {
     analogRead(pin);
@@ -687,6 +690,59 @@ void acknowledgeCommand(uint32_t commandId) {
   }
 }
 
+// Helper to parse comma-separated string to array
+void parsePinString(const String& pinString, uint8_t* pinArray, uint8_t count) {
+    int currentPinIndex = 0;
+    int lastCommaIndex = -1;
+    for (int i = 0; i < pinString.length() && currentPinIndex < count; ++i) {
+        if (pinString.charAt(i) == ',') {
+            pinArray[currentPinIndex++] = pinString.substring(lastCommaIndex + 1, i).toInt();
+            lastCommaIndex = i;
+        }
+    }
+    if (currentPinIndex < count) { // Get the last number
+        pinArray[currentPinIndex++] = pinString.substring(lastCommaIndex + 1).toInt();
+    }
+    // Fill remaining with 0 if string was shorter
+    for (; currentPinIndex < count; ++currentPinIndex) {
+        pinArray[currentPinIndex] = 0;
+    }
+}
+
+void loadGpioConfig() {
+    String soilPinsStr = preferences.getString("soil_pins", "");
+    String relayPinsStr = preferences.getString("relay_pins", "");
+
+    if (soilPinsStr.length() > 0) {
+        parsePinString(soilPinsStr, g_soilSensorPins, CHANNEL_COUNT);
+        Serial.print(F("Loaded custom soil sensor pins: "));
+        Serial.println(soilPinsStr);
+    } else {
+        Serial.println(F("No custom soil sensor pins found, using defaults."));
+    }
+
+    if (relayPinsStr.length() > 0) {
+        parsePinString(relayPinsStr, g_relayPins, CHANNEL_COUNT);
+        Serial.print(F("Loaded custom relay pins: "));
+        Serial.println(relayPinsStr);
+    } else {
+        Serial.println(F("No custom relay pins found, using defaults."));
+    }
+}
+
+void saveGpioConfig(const String& soilPinsStr, const String& relayPinsStr) {
+    preferences.putString("soil_pins", soilPinsStr);
+    preferences.putString("relay_pins", relayPinsStr);
+    Serial.println(F("New GPIO configuration saved to preferences. Rebooting to apply..."));
+    delay(1000); // Give time for serial output to flush
+    ESP.restart();
+}
+
+constexpr unsigned long GPIO_CONFIG_POLL_INTERVAL_MS = 60000; // Poll every minute
+
+
+
+
 void pollCommand() {
   connectWifi();
   if (WiFi.status() != WL_CONNECTED || apiBaseUrl.length() == 0) {
@@ -740,25 +796,88 @@ void pollCommand() {
   acknowledgeCommand(commandId);
 }
 
+void pollGpioConfig() {
+    connectWifi();
+    if (WiFi.status() != WL_CONNECTED || apiBaseUrl.length() == 0) {
+        return;
+    }
+
+    String url = apiBaseUrl + "?api=gpio_config&device_id=" + DEVICE_ID;
+    std::unique_ptr<WiFiClient> client;
+    if (url.startsWith("https")) {
+        auto s = new WiFiClientSecure();
+        s->setInsecure();
+        client.reset(s);
+    } else {
+        client.reset(new WiFiClient());
+    }
+
+    HTTPClient http;
+    Serial.print(F("HTTP GET GPIO config: "));
+    Serial.println(url);
+
+    if (!http.begin(*client, url)) {
+        Serial.println(F("HTTP begin failed for GPIO config (check URL)"));
+        return;
+    }
+
+    http.addHeader("X-Api-Key", apiKey);
+    const int status = http.GET();
+    const String response = http.getString();
+    http.end();
+
+    if (status < 200 || status >= 300) {
+        Serial.printf("GPIO config poll failed. Status: %d\n", status);
+        if (status < 0) Serial.printf("Error: %s\n", http.errorToString(status).c_str());
+        Serial.printf("Server Response: %s\n", response.c_str());
+        return;
+    }
+
+    String newSoilPinsStr = extractJsonString(response, "soil_sensor_pins");
+    String newRelayPinsStr = extractJsonString(response, "relay_pins");
+
+    String currentSoilPinsStr;
+    for (uint8_t i = 0; i < CHANNEL_COUNT; ++i) {
+        currentSoilPinsStr += String(g_soilSensorPins[i]);
+        if (i < CHANNEL_COUNT - 1) currentSoilPinsStr += ",";
+    }
+    String currentRelayPinsStr;
+    for (uint8_t i = 0; i < CHANNEL_COUNT; ++i) {
+        currentRelayPinsStr += String(g_relayPins[i]);
+        if (i < CHANNEL_COUNT - 1) currentRelayPinsStr += ",";
+    }
+
+    if (newSoilPinsStr != currentSoilPinsStr || newRelayPinsStr != currentRelayPinsStr) {
+        Serial.println(F("New GPIO configuration received. Saving and rebooting..."));
+        saveGpioConfig(newSoilPinsStr, newRelayPinsStr);
+    } else {
+        Serial.println(F("GPIO configuration is up to date."));
+    }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(500);
 
   analogReadResolution(12);
+
+  loadConfig(); // Loads WiFi and API settings
+  loadGpioConfig(); // Load GPIO settings first
+
+  // Initialize pins based on loaded config or defaults
   for (uint8_t channel = 0; channel < CHANNEL_COUNT; ++channel) {
-    analogSetPinAttenuation(SOIL_SENSOR_PINS[channel], ADC_11db);
-    pinMode(SOIL_SENSOR_PINS[channel], INPUT);
-    relayWrite(channel, false);
-    pinMode(RELAY_PINS[channel], OUTPUT);
-    relayWrite(channel, false);
+    analogSetPinAttenuation(g_soilSensorPins[channel], ADC_11db);
+    pinMode(g_soilSensorPins[channel], INPUT);
+    pinMode(g_relayPins[channel], OUTPUT);
+    relayWrite(channel, false); // Ensure relays are off
   }
+
   if (BATTERY_MONITOR_ENABLED) {
     analogSetPinAttenuation(BATTERY_SENSOR_PIN, ADC_11db);
     pinMode(BATTERY_SENSOR_PIN, INPUT);
   }
   initPumpsOff();
 
-  loadConfig();
   connectWifi();
   setupConfigServer();
 
@@ -799,5 +918,10 @@ void loop() {
   if (now - lastCommandPollMs >= COMMAND_INTERVAL_MS) {
     lastCommandPollMs = now;
     pollCommand();
+  }
+
+  if (now - lastGpioConfigPollMs >= GPIO_CONFIG_POLL_INTERVAL_MS) {
+    lastGpioConfigPollMs = now;
+    pollGpioConfig();
   }
 }
