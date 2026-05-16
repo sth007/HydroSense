@@ -491,70 +491,133 @@ foreach ($devices as $device) {
   <title>HydroSense</title>
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
-    :root { color-scheme: light; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: #f4f7f6; color: #17211d; }
+    :root { color-scheme: light; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: #f0f4f2; color: #17211d; }
+    *, *::before, *::after { box-sizing: border-box; }
     body { margin: 0; }
-    main { max-width: 1280px; margin: 0 auto; padding: 28px 18px 40px; }
-    header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
-    h1 { margin: 0; font-size: clamp(28px, 5vw, 46px); line-height: 1; letter-spacing: 0; }
+    main { max-width: 1200px; margin: 0 auto; padding: 12px 12px 28px; }
     .muted { color: #63736c; }
-    .summary { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-    .refresh-control { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 8px; font-size: 13px; color: #63736c; width: 100%; }
-    .pill { background: #fff; border: 1px solid #d9e4df; border-radius: 999px; padding: 8px 12px; font-weight: 700; }
-    .pump-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 14px; align-items: start; }
-    .card { background: #fff; border: 1px solid #d9e4df; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgb(20 40 32 / 5%); }
-    .pump-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 16px; }
-    .pump-title { min-width: 0; }
-    .pump-title h2 { font-size: 20px; line-height: 1.1; margin: 0 0 5px; overflow-wrap: anywhere; }
-    .status { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 14px; font-weight: 750; }
-    .status-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--status-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-color) 18%, transparent); }
-    .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .metric { border: 1px solid #e1ebe6; border-radius: 7px; padding: 12px; min-width: 0; }
-    .channel-grid { display: grid; gap: 12px; }
-    .channel { border: 1px solid #dbe7e1; border-radius: 8px; padding: 14px; background: #fafcfb; }
-    .channel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-    .channel-head h3 { margin: 0; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
-    .status-pill { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
-    .status-pill.on { background: #1d6f54; color: #fff; }
-    .status-pill.off { background: #f0f4f2; color: #63736c; border: 1px solid #d9e4df; }
-    .label { font-size: 13px; color: #63736c; margin-bottom: 8px; }
-    .value { font-size: clamp(22px, 5vw, 32px); font-weight: 800; line-height: 1; overflow-wrap: anywhere; }
-    .small-info { font-size: 11px; color: #63736c; margin-top: 4px; line-height: 1.3; }
-    canvas { width: 100%; height: 160px; display: block; margin-top: 12px; border-top: 1px solid #edf3f0; }
-    form { display: grid; gap: 10px; }
-    input { width: 100%; box-sizing: border-box; border: 1px solid #c6d5ce; border-radius: 6px; padding: 10px 12px; font: inherit; }
-    .button-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-    button { border: 0; border-radius: 6px; padding: 10px 8px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; background: #1d6f54; color: #fff; transition: opacity 0.2s; }
-    button:hover { opacity: 0.9; }
-    button.secondary { background: #5a7066; }
-    button.danger { background: #c04836; }
-    .success { color: #1d6f54; background: #eef7f3; border: 1px solid #d9e4df; border-radius: 6px; padding: 12px; margin-bottom: 20px; font-weight: 700; }
-    details { margin-top: 12px; border-top: 1px solid #eee; padding-top: 8px; }
-    summary { font-size: 12px; font-weight: 700; color: #1d6f54; cursor: pointer; padding: 4px 0; display: flex; align-items: center; gap: 6px; }
-    summary:hover { text-decoration: underline; }
-    .error { color: #a43d2d; font-weight: 700; }
-    .empty { padding: 28px; text-align: center; }
-    @media (max-width: 720px) { header { display: block; } .summary { justify-content: flex-start; margin-top: 14px; } .pump-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 420px) { main { padding: 20px 10px 32px; } .card { padding: 13px; } .metrics { grid-template-columns: 1fr; } .button-row { grid-template-columns: 1fr; } .pump-head { display: block; } .status { margin-top: 10px; } }
+
+    /* Header */
+    .page-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; margin-bottom: 8px; }
+    .page-title h1 { margin: 0; font-size: clamp(18px, 3.5vw, 26px); line-height: 1; }
+    .page-title small { font-size: 11px; color: #63736c; }
+    .header-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+    .pill { background: #fff; border: 1px solid #d9e4df; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 700; }
+    .refresh-ctrl { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #63736c; }
+    .refresh-ctrl input[type=checkbox] { margin: 0; }
+
+    /* API key bar */
+    .api-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; background: #fff; border: 1px solid #d9e4df; border-radius: 7px; padding: 6px 11px; }
+    .api-bar label { font-size: 11px; font-weight: 700; color: #63736c; white-space: nowrap; }
+    .api-bar input { flex: 1; max-width: 260px; border: 1px solid #c6d5ce; border-radius: 5px; padding: 5px 8px; font: inherit; font-size: 13px; }
+
+    /* Device grid */
+    .pump-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; align-items: start; }
+    .card { background: #fff; border: 1px solid #d9e4df; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgb(20 40 32 / 5%); }
+
+    /* Device header */
+    .device-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
+    .device-title h2 { font-size: 14px; margin: 0 0 2px; overflow-wrap: anywhere; font-weight: 800; }
+    .device-title .ts { font-size: 10px; color: #63736c; }
+    .status { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; font-weight: 700; }
+    .status-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--status-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-color) 22%, transparent); display: inline-block; }
+
+    /* Device metrics */
+    .device-metrics { display: flex; gap: 6px; margin-bottom: 8px; }
+    .d-metric { flex: 1; border: 1px solid #e1ebe6; border-radius: 5px; padding: 5px 8px; min-width: 0; }
+    .d-metric .lbl { font-size: 10px; color: #63736c; margin-bottom: 1px; }
+    .d-metric .val { font-size: 16px; font-weight: 800; line-height: 1; }
+    .d-metric .sub { font-size: 10px; color: #63736c; }
+
+    /* Chart */
+    .history-canvas { width: 100%; height: 80px; display: block; margin-bottom: 8px; border-top: 1px solid #edf3f0; padding-top: 5px; }
+
+    /* Channel */
+    .channel-grid { display: grid; gap: 6px; }
+    .channel { border: 1px solid #dbe7e1; border-radius: 7px; padding: 8px 10px; background: #fafcfb; }
+    .channel-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+    .channel-head h3 { margin: 0; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+    .pump-badge { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+    .pump-badge.on { background: #dcf0e8; color: #1d6f54; }
+    .pump-badge.off { background: #f0f4f2; color: #63736c; border: 1px solid #d9e4df; }
+    .pump-badge.needs { background: #fef3e2; color: #b06c00; }
+
+    /* Channel metrics */
+    .ch-metrics { display: flex; gap: 5px; margin-bottom: 6px; }
+    .ch-metric { flex: 1; border: 1px solid #e8f0ec; border-radius: 5px; padding: 5px 7px; min-width: 0; }
+    .ch-metric .lbl { font-size: 10px; color: #63736c; margin-bottom: 1px; }
+    .ch-metric .val { font-size: 17px; font-weight: 800; line-height: 1; }
+    .ch-metric .sub { font-size: 10px; color: #63736c; margin-top: 2px; line-height: 1.3; }
+
+    /* Pump control */
+    .pump-form { display: flex; gap: 4px; margin-bottom: 4px; }
+    .pump-form button { flex: 1; border: 0; border-radius: 5px; padding: 6px 2px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; color: #fff; }
+    .btn-on { background: #1d6f54; }
+    .btn-off { background: #c04836; }
+    .btn-auto { background: #5a7066; }
+    .pump-form button:hover { opacity: 0.85; }
+    .mode-line { font-size: 10px; color: #63736c; margin: 0 0 4px; }
+
+    /* Settings accordion */
+    .ch-settings { border-top: 1px solid #edf3f0; margin-top: 4px; }
+    .ch-settings > summary { font-size: 11px; font-weight: 700; color: #1d6f54; cursor: pointer; padding: 5px 0 1px; list-style: none; display: flex; align-items: center; gap: 4px; user-select: none; }
+    .ch-settings > summary::-webkit-details-marker { display: none; }
+    .ch-settings > summary::before { content: '▶'; font-size: 8px; transition: transform 0.12s; display: inline-block; }
+    .ch-settings[open] > summary::before { transform: rotate(90deg); }
+    .ch-settings > summary:hover { text-decoration: underline; }
+    .settings-body { padding: 8px 0 2px; display: grid; gap: 10px; }
+    .settings-sec h4 { font-size: 10px; font-weight: 700; color: #63736c; margin: 0 0 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .settings-sec form { display: grid; gap: 4px; }
+    .settings-sec label { font-size: 11px; color: #63736c; }
+    .settings-sec input[type=text], .settings-sec input[type=number] { width: 100%; border: 1px solid #c6d5ce; border-radius: 5px; padding: 5px 7px; font: inherit; font-size: 12px; }
+    .settings-sec button[type=submit] { border: 0; border-radius: 5px; padding: 6px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: #1d6f54; color: #fff; transition: opacity 0.15s; }
+    .settings-sec button[type=submit]:hover { opacity: 0.85; }
+    .settings-sec button[type=submit]:disabled { opacity: 0.4; cursor: not-allowed; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .offline-note { font-size: 10px; color: #a33b2b; margin: 3px 0 0; }
+
+    /* Device footer */
+    .device-footer { font-size: 10px; color: #63736c; margin-top: 6px; }
+
+    /* Messages */
+    .success { color: #1d6f54; background: #eef7f3; border: 1px solid #c8e5d7; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px; font-weight: 700; }
+    .error { color: #a43d2d; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+    .empty { padding: 20px; text-align: center; color: #63736c; }
+
+    @media (max-width: 540px) {
+      .pump-grid { grid-template-columns: 1fr; }
+      .api-bar input { max-width: none; }
+      .header-meta { width: 100%; }
+    }
+    @media (max-width: 360px) {
+      main { padding: 8px 8px 20px; }
+      .device-metrics, .ch-metrics { flex-wrap: wrap; }
+    }
   </style>
 </head>
 <body>
 <main>
-  <header>
-    <div>
+  <div class="page-header">
+    <div class="page-title">
       <h1>HydroSense</h1>
-      <div class="muted">Pumpen Dashboard</div>
+      <small>Pumpen Dashboard</small>
     </div>
-    <div class="summary">
-      <div class="pill"><?= $deviceCount ?> Pumpen</div>
-      <div class="pill"><?= $onlineCount ?> online</div>
-      <div class="pill"><?= $recentCount ?> vor 15 Min.</div>
-      <div class="refresh-control">
+    <div class="header-meta">
+      <span class="pill"><?= $deviceCount ?> Geräte</span>
+      <span class="pill" style="color:#10894e"><?= $onlineCount ?> online</span>
+      <?php if ($recentCount): ?><span class="pill" style="color:#d98220"><?= $recentCount ?> vor 15 Min.</span><?php endif; ?>
+      <span class="refresh-ctrl">
         <input type="checkbox" id="autoRefreshToggle" checked>
-        <label for="autoRefreshToggle">Auto-Update</label>
-        <span id="refreshCountdown" style="min-width: 2ch; text-align: right;">15</span>s
-      </div>
+        <label for="autoRefreshToggle">Auto</label>
+        <span id="refreshCountdown">15</span>s
+      </span>
     </div>
-  </header>
+  </div>
+
+  <div class="api-bar">
+    <label for="globalApiKey">API Key</label>
+    <input id="globalApiKey" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key eingeben…" autocomplete="current-password">
+  </div>
 
   <?php if ($dashboardError): ?><p class="error"><?= htmlspecialchars($dashboardError) ?></p><?php endif; ?>
   <?php if ($dashboardMessage): ?><div class="success" id="successMsg"><?= htmlspecialchars($dashboardMessage) ?></div><?php endif; ?>
@@ -589,12 +652,13 @@ foreach ($devices as $device) {
         $soilPinsArray = array_pad($soilPinsArray, PHP_CHANNEL_COUNT, '0');
         $relayPinsArray = array_pad($relayPinsArray, PHP_CHANNEL_COUNT, '0');
         $canvasId = 'history-' . preg_replace('/[^a-zA-Z0-9_-]/', '-', $deviceId);
+        $isOffline = $state['key'] === 'offline';
       ?>
       <article class="card" id="device-<?= htmlspecialchars($deviceId) ?>">
-        <div class="pump-head">
-          <div class="pump-title">
+        <div class="device-head">
+          <div class="device-title">
             <h2><?= htmlspecialchars($deviceId) ?></h2>
-            <div class="muted">Letztes Update: <?= htmlspecialchars($device['received_at'] ?? 'unbekannt') ?></div>
+            <div class="ts"><?= htmlspecialchars($device['received_at'] ?? 'unbekannt') ?></div>
           </div>
           <div class="status" style="--status-color: <?= htmlspecialchars($state['color']) ?>">
             <span class="status-dot" aria-hidden="true"></span>
@@ -602,120 +666,130 @@ foreach ($devices as $device) {
           </div>
         </div>
 
-        <div class="metrics" style="margin-bottom: 12px;">
-            <div class="metric">
-              <div class="label">Batterie</div>
-              <div class="value"><?= (int) ($device['battery_percent'] ?? 0) ?>%</div>
-              <div class="muted"><?= number_format(((int) ($device['battery_mv'] ?? 0)) / 1000, 2) ?> V</div>
-            </div>
-            <div class="metric">
-              <div class="label">Kanaele</div>
-              <div class="value"><?= count($channels) ?></div>
-              <div class="muted">Relays / Sensoren</div>
-            </div>
+        <div class="device-metrics">
+          <div class="d-metric">
+            <div class="lbl">Batterie</div>
+            <div class="val"><?= (int) ($device['battery_percent'] ?? 0) ?>%</div>
+            <div class="sub"><?= number_format(((int) ($device['battery_mv'] ?? 0)) / 1000, 2) ?> V</div>
+          </div>
+          <div class="d-metric">
+            <div class="lbl">Kanäle</div>
+            <div class="val"><?= count($channels) ?></div>
+            <div class="sub">aktiv</div>
+          </div>
         </div>
 
-        <canvas class="history-canvas" id="<?= htmlspecialchars($canvasId) ?>" width="520" height="160" data-history="<?= htmlspecialchars(json_encode($history, JSON_UNESCAPED_SLASHES)) ?>"></canvas>
+        <canvas class="history-canvas" id="<?= htmlspecialchars($canvasId) ?>" width="520" height="80"
+          data-history="<?= htmlspecialchars(json_encode($history, JSON_UNESCAPED_SLASHES)) ?>"></canvas>
 
         <div class="channel-grid">
           <?php foreach ($channels as $channel): ?>
-            <?php 
-              $channelIndex = (int) ($channel['index'] ?? 0);
-              $displayName = !empty($channelNamesArray[$channelIndex]) ? $channelNamesArray[$channelIndex] : ($channel['name'] ?? ('Pump ' . ($channelIndex + 1)));
+            <?php
+              $ci = (int) ($channel['index'] ?? 0);
+              $displayName = !empty($channelNamesArray[$ci]) ? $channelNamesArray[$ci] : ($channel['name'] ?? ('Pump ' . ($ci + 1)));
+              $pumpOn = !empty($channel['pump_on']);
+              $needsWater = !empty($channel['needs_water']);
             ?>
             <section class="channel">
               <div class="channel-head">
                 <h3><?= htmlspecialchars($displayName) ?></h3>
-                <strong><?= !empty($channel['pump_on']) ? 'AN' : 'AUS' ?></strong>
+                <span class="pump-badge <?= $pumpOn ? 'on' : ($needsWater ? 'needs' : 'off') ?>">
+                  <?= $pumpOn ? 'AN' : ($needsWater ? '~ Wasser' : 'AUS') ?>
+                </span>
               </div>
-              <div class="metrics">
-                <div class="metric">
-                  <div class="label">Feuchtigkeit</div>
-                  <div class="value"><?= (int) ($channel['moisture_percent'] ?? 0) ?>%</div>
+
+              <div class="ch-metrics">
+                <div class="ch-metric">
+                  <div class="lbl">Feuchtigkeit</div>
+                  <div class="val"><?= (int) ($channel['moisture_percent'] ?? 0) ?>%</div>
                 </div>
-                <div class="metric">
-                  <div class="label">Sensor raw</div>
-                  <div class="value"><?= (int) ($channel['soil_raw'] ?? 0) ?></div>
-                  <div class="muted">ADC12 <?= (int) ($channel['soil_raw12'] ?? 0) ?></div>
-                  <div class="muted">Trocken: <?= (int) ($channel['dry_raw'] ?? 0) ?></div>
-                  <div class="muted">Nass: <?= (int) ($channel['wet_raw'] ?? 0) ?></div>
+                <div class="ch-metric">
+                  <div class="lbl">Sensor raw</div>
+                  <div class="val"><?= (int) ($channel['soil_raw'] ?? 0) ?></div>
+                  <div class="sub">ADC12: <?= (int) ($channel['soil_raw12'] ?? 0) ?><br>Tr: <?= (int) ($channel['dry_raw'] ?? 0) ?> · Na: <?= (int) ($channel['wet_raw'] ?? 0) ?></div>
                 </div>
               </div>
-              <form method="post">
-                <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+
+              <form method="post" class="pump-form">
+                <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
                 <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-                <input type="hidden" name="channel" value="<?= $channelIndex ?>">
-                <div class="button-row">
-                  <button name="pump" value="on">An</button>
-                  <button class="danger" name="pump" value="off">Aus</button>
-                  <button class="secondary" name="pump" value="auto">Auto</button>
-                </div>
+                <input type="hidden" name="channel" value="<?= $ci ?>">
+                <button class="btn-on" name="pump" value="on">An</button>
+                <button class="btn-off" name="pump" value="off">Aus</button>
+                <button class="btn-auto" name="pump" value="auto">Auto</button>
               </form>
-              <p class="muted">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></p>
+              <p class="mode-line">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></p>
 
-              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+              <details class="ch-settings">
+                <summary>Einstellungen</summary>
+                <div class="settings-body">
 
-              <section class="name-config">
-                <form method="post">
-                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
-                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-                  <input type="hidden" name="action" value="save_channel_name_config">
-                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
-                  <label for="channel_name_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Kanalname bearbeiten</label>
-                  <input id="channel_name_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="channel_name" type="text" value="<?= htmlspecialchars($channelNamesArray[$channelIndex] ?? '') ?>" placeholder="z.B. Tomaten">
-                  <button type="submit">Name speichern</button>
-                </form>
-              </section>
+                  <div class="settings-sec">
+                    <h4>Kanalname</h4>
+                    <form method="post">
+                      <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
+                      <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                      <input type="hidden" name="action" value="save_channel_name_config">
+                      <input type="hidden" name="channel_index" value="<?= $ci ?>">
+                      <div class="row2">
+                        <input name="channel_name" type="text" value="<?= htmlspecialchars($channelNamesArray[$ci] ?? '') ?>" placeholder="z.B. Tomaten">
+                        <button type="submit">Speichern</button>
+                      </div>
+                    </form>
+                  </div>
 
-              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+                  <div class="settings-sec">
+                    <h4>Kalibrierung</h4>
+                    <form method="post">
+                      <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
+                      <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                      <input type="hidden" name="action" value="save_channel_calibration_config">
+                      <input type="hidden" name="channel_index" value="<?= $ci ?>">
+                      <div class="row2">
+                        <div>
+                          <label>Trocken (Luft)</label>
+                          <input name="dry_raw_value" type="number" value="<?= htmlspecialchars($dryRawArray[$ci] ?? '') ?>" <?= $isOffline ? 'disabled' : '' ?>>
+                        </div>
+                        <div>
+                          <label>Nass (Wasser)</label>
+                          <input name="wet_raw_value" type="number" value="<?= htmlspecialchars($wetRawArray[$ci] ?? '') ?>" <?= $isOffline ? 'disabled' : '' ?>>
+                        </div>
+                      </div>
+                      <button type="submit" <?= $isOffline ? 'disabled' : '' ?>>Kalibrierung speichern</button>
+                    </form>
+                    <?php if ($isOffline): ?><p class="offline-note">Offline – Kalibrierung gesperrt.</p><?php endif; ?>
+                  </div>
 
-              <section class="calibration-config">
-                <h4>Kalibrierung für Kanal <?= $channelIndex + 1 ?></h4>
-                <form method="post">
-                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
-                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-                  <input type="hidden" name="action" value="save_channel_calibration_config">
-                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
+                  <div class="settings-sec">
+                    <h4>GPIO</h4>
+                    <form method="post">
+                      <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
+                      <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                      <input type="hidden" name="action" value="save_channel_gpio_config">
+                      <input type="hidden" name="channel_index" value="<?= $ci ?>">
+                      <div class="row2">
+                        <div>
+                          <label>Sensor GPIO</label>
+                          <input name="humidity_sensor_gpio" type="number" value="<?= htmlspecialchars($soilPinsArray[$ci] ?? '') ?>" <?= $isOffline ? 'disabled' : '' ?>>
+                        </div>
+                        <div>
+                          <label>Pumpen GPIO</label>
+                          <input name="pump_gpio" type="number" value="<?= htmlspecialchars($relayPinsArray[$ci] ?? '') ?>" <?= $isOffline ? 'disabled' : '' ?>>
+                        </div>
+                      </div>
+                      <button type="submit" <?= $isOffline ? 'disabled' : '' ?>>GPIO speichern</button>
+                    </form>
+                    <?php if ($isOffline): ?><p class="offline-note">Offline – GPIO Einstellungen gesperrt.</p><?php endif; ?>
+                  </div>
 
-                  <label for="dry_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Trocken (Luft) Wert</label>
-                  <input id="dry_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="dry_raw_value" type="number" value="<?= htmlspecialchars($dryRawArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-
-                  <label for="wet_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Nass (Wasser) Wert</label>
-                  <input id="wet_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="wet_raw_value" type="number" value="<?= htmlspecialchars($wetRawArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-
-                  <button type="submit" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>Kalibrierung speichern</button>
-                </form>
-                <?php if ($state['key'] === 'offline'): ?>
-                  <p class="muted" style="margin-top: 10px;">Gerät ist offline. Kalibrierung kann nicht geändert werden.</p>
-                <?php endif; ?>
-              </section>
-
-              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
-
-              <section class="gpio-config">
-                <h4>GPIO Einstellungen für Kanal <?= $channelIndex + 1 ?></h4>
-                <form method="post">
-                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
-                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-                  <input type="hidden" name="action" value="save_channel_gpio_config">
-                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
-
-                  <label for="humidity_sensor_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Feuchtigkeitssensor GPIO</label>
-                  <input id="humidity_sensor_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="humidity_sensor_gpio" type="number" value="<?= htmlspecialchars($soilPinsArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-
-                  <label for="pump_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Pumpen GPIO</label>
-                  <input id="pump_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="pump_gpio" type="number" value="<?= htmlspecialchars($relayPinsArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-
-                  <button type="submit" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>GPIO für Kanal speichern</button>
-                </form>
-                <?php if ($state['key'] === 'offline'): ?>
-                  <p class="muted" style="margin-top: 10px;">Gerät ist offline. GPIO Einstellungen können nicht geändert werden.</p>
-                <?php endif; ?>
-              </section>
+                </div>
+              </details>
             </section>
           <?php endforeach; ?>
         </div>
-        <p class="muted">Letzter Befehl: Kanal <?= (int) (($command['channel'] ?? 0) + 1) ?> · <?= htmlspecialchars($command['pump'] ?? 'keiner') ?> <?= empty($command['acked_at']) ? '' : '· bestaetigt' ?></p>
+        <p class="device-footer">
+          Letzter Befehl: Kanal <?= (int) (($command['channel'] ?? 0) + 1) ?> · <?= htmlspecialchars($command['pump'] ?? 'keiner') ?><?= empty($command['acked_at']) ? '' : ' · bestätigt' ?>
+        </p>
       </article>
     <?php endforeach; ?>
   </section>
@@ -723,35 +797,35 @@ foreach ($devices as $device) {
 
 <script>
 $(function() {
+  function syncApiKey() {
+    const v = $('#globalApiKey').val();
+    $('input[name="api_key"]').val(v);
+  }
+  $('#globalApiKey').on('input', syncApiKey);
+
   function initCharts() {
     $('.history-canvas').each(function() {
       const historyData = $(this).data('history') || [];
       const ctx = this.getContext('2d');
-      const w = this.width;
-      const h = this.height;
-      const pad = 28;
+      const w = this.width, h = this.height, pad = 22;
       ctx.clearRect(0, 0, w, h);
       ctx.strokeStyle = '#d7e1dc';
       ctx.lineWidth = 1;
-      ctx.font = '12px system-ui';
+      ctx.font = '10px system-ui';
       ctx.fillStyle = '#63736c';
       for (const p of [0, 50, 100]) {
         const y = h - pad - (p / 100) * (h - pad * 2);
-        ctx.beginPath();
-        ctx.moveTo(pad, y);
-        ctx.lineTo(w - 8, y);
-        ctx.stroke();
-        ctx.fillText(`${p}%`, 2, y + 4);
+        ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - 4, y); ctx.stroke();
+        ctx.fillText(`${p}%`, 0, y + 4);
       }
       if (historyData.length > 1) {
         ctx.strokeStyle = '#1d6f54';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        historyData.forEach((item, index) => {
-          const x = pad + index * (w - pad - 8) / (historyData.length - 1);
+        historyData.forEach((item, i) => {
+          const x = pad + i * (w - pad - 4) / (historyData.length - 1);
           const y = h - pad - Math.max(0, Math.min(100, item.moisture_percent || 0)) / 100 * (h - pad * 2);
-          if (index === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         });
         ctx.stroke();
       }
@@ -765,38 +839,28 @@ $(function() {
   const $toggle = $('#autoRefreshToggle');
 
   setInterval(() => {
-    if (!$toggle.is(':checked')) return;
-    timeLeft--;
-    if (timeLeft <= 0) {
-      timeLeft = 15;
-      refreshData();
-    }
+    if (!$toggle.is(':checked')) { $countdown.text(15); return; }
+    if (--timeLeft <= 0) { timeLeft = 15; refreshData(); }
     $countdown.text(timeLeft);
   }, 1000);
 
   function refreshData() {
     $.get(window.location.href, function(data) {
-      const $newDoc = $($.parseHTML(data));
-      
-      // Update summary metrics
-      $('.summary .pill').each(function(i) {
-        $(this).html($newDoc.find('.summary .pill').eq(i).html());
+      const $new = $($.parseHTML(data));
+      $('.header-meta .pill').each(function(i) {
+        $(this).html($new.find('.header-meta .pill').eq(i).html());
       });
-
-      // Update pump cards if user isn't typing
       if (!$(document.activeElement).is('input, textarea')) {
-        $('.pump-grid').html($newDoc.find('.pump-grid').html());
+        $('.pump-grid').html($new.find('.pump-grid').html());
         initCharts();
+        syncApiKey();
       }
-    }).fail(function(err) {
-      console.error('Auto-refresh failed:', err);
-    });
+    }).fail(function(e) { console.error('Refresh failed:', e); });
   }
 
   if ($('#successMsg').length) {
     setTimeout(() => {
-      $('#successMsg').fadeOut(500);
-      // URL-Parameter bereinigen, damit die Meldung bei manuellem Refresh nicht erneut erscheint
+      $('#successMsg').fadeOut(400);
       const url = new URL(window.location.href);
       url.searchParams.delete('msg');
       window.history.replaceState({}, '', url);
