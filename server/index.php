@@ -465,7 +465,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         // Load current GPIO config (which now includes calibration values)
         $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), []);
-
+        
+        // Maintain existing structure, only update calibration
         $dryRawArray = explode(',', $currentGpioConfig['dry_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')));
         $wetRawArray = explode(',', $currentGpioConfig['wet_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')));
 
@@ -498,6 +499,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             jsonResponse(['ok' => true, 'message' => 'Kalibrierung gespeichert.']);
         }
         header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved#device-' . urlencode($deviceId));
+        exit;
+    }
+}
+
+// Handle dashboard config POST (Refresh rate and API Key storage sync)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_dashboard_config') {
+    if (!hash_equals($apiKey, $dashboardKey)) {
+        $msg = 'API key ist falsch.';
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            jsonResponse(['ok' => false, 'error' => $msg], 401);
+        }
+        $dashboardError = $msg;
+    } else {
+        $refresh = max(5, numberValue($_POST, 'refresh_seconds'));
+        $config = readJsonFile(configPath($dataDir), []);
+        $config['refresh_seconds'] = $refresh;
+        writeJsonFile(configPath($dataDir), $config);
+
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            jsonResponse(['ok' => true, 'message' => 'Dashboard-Konfiguration gespeichert.', 'refresh_seconds' => $refresh]);
+        }
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved');
         exit;
     }
 }
@@ -937,7 +960,7 @@ $(function() {
     const masterKey = $('#globalApiKey').val();
     $form.find('input[name="api_key"]').val(masterKey);
 
-    const formData = $form.serialize();
+    const formData = $form.serialize() + '&ajax=1'; // Add explicit AJAX marker
     const action = $form.find('input[name="action"]').val();
     
     console.group('HydroSense: Settings Save');
@@ -945,6 +968,7 @@ $(function() {
     console.log('[Action]', action);
     console.log('[Payload]', $form.serializeArray().reduce((acc, item) => { acc[item.name] = item.value; return acc; }, {}));
 
+    // Post to current URL
     $.post(window.location.href, formData)
       .done(function(res) {
         console.log('[Response]', res);
