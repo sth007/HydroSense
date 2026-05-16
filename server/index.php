@@ -301,6 +301,7 @@ if ($api === 'gpio_config') {
             // Provide defaults if not found in file (matching src/main.cpp defaults)
             'soil_sensor_pins' => $config['soil_sensor_pins'] ?? '34,35,36,39',
             'relay_pins' => $config['relay_pins'] ?? '26,25,32,33',
+            'channel_names' => $config['channel_names'] ?? array_fill(0, PHP_CHANNEL_COUNT, ''),
         ]);
     }
 }
@@ -373,6 +374,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'updated_at' => gmdate('c'),
         ]);
         // Redirect to refresh the page and show updated values, anchor to the device card
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+        exit;
+    }
+}
+
+// Handle channel name config POST from dashboard
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_channel_name_config') {
+    if (!hash_equals($apiKey, $dashboardKey)) {
+        $dashboardError = 'API key ist falsch.';
+    } else {
+        $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
+        $channelIndex = numberValue($_POST, 'channel_index');
+        $newChannelName = trim((string) ($_POST['channel_name'] ?? ''));
+
+        // Load current GPIO config (which now includes channel_names)
+        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
+            'soil_sensor_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
+            'relay_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
+            'channel_names' => array_fill(0, PHP_CHANNEL_COUNT, ''),
+        ]);
+
+        $channelNamesArray = $currentGpioConfig['channel_names'];
+        // Ensure array is PHP_CHANNEL_COUNT long
+        $channelNamesArray = array_pad($channelNamesArray, PHP_CHANNEL_COUNT, '');
+
+        // Update the specific channel's name
+        if ($channelIndex >= 0 && $channelIndex < PHP_CHANNEL_COUNT) {
+            $channelNamesArray[$channelIndex] = $newChannelName;
+        } else {
+            $dashboardError = 'Ungültiger Kanalindex für Kanalnamen-Konfiguration.';
+            header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+            exit;
+        }
+
+        // Update the gpioConfig with the new channel names
+        $currentGpioConfig['channel_names'] = $channelNamesArray;
+        $currentGpioConfig['updated_at'] = gmdate('c'); // Update timestamp
+
+        writeJsonFile(gpioConfigPath($dataDir, $deviceId), $currentGpioConfig);
         header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
         exit;
     }
