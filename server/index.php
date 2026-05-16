@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const DEFAULT_API_KEY = 'change-me';
+const PHP_CHANNEL_COUNT = 4; // Must match CHANNEL_COUNT in src/main.cpp
 const HISTORY_LIMIT = 240;
 
 $dataDir = __DIR__ . '/data';
@@ -328,18 +329,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pump'])) {
     }
 }
 
-// Add handling for GPIO config POST from dashboard
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_gpio_config') {
+// Handle GPIO config POST from dashboard for a specific channel
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_channel_gpio_config') {
     if (!hash_equals($apiKey, $dashboardKey)) {
         $dashboardError = 'API key ist falsch.';
     } else {
         $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
-        $soilSensorPins = textValue($_POST, 'soil_sensor_pins', '');
-        $relayPins = textValue($_POST, 'relay_pins', '');
+        $channelIndex = numberValue($_POST, 'channel_index');
+        $newHumiditySensorGpio = numberValue($_POST, 'humidity_sensor_gpio');
+        $newPumpGpio = numberValue($_POST, 'pump_gpio');
 
+        // Load current GPIO config
+        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
+            'soil_sensor_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)), // Default to 0 for all channels
+            'relay_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)),     // Default to 0 for all channels
+        ]);
+
+        $soilPinsArray = explode(',', $currentGpioConfig['soil_sensor_pins']);
+        $relayPinsArray = explode(',', $currentGpioConfig['relay_pins']);
+
+        // Ensure arrays are exactly PHP_CHANNEL_COUNT long
+        $soilPinsArray = array_pad($soilPinsArray, PHP_CHANNEL_COUNT, '0');
+        $relayPinsArray = array_pad($relayPinsArray, PHP_CHANNEL_COUNT, '0');
+
+        // Update the specific channel's pins
+        if ($channelIndex >= 0 && $channelIndex < PHP_CHANNEL_COUNT) {
+            $soilPinsArray[$channelIndex] = (string)$newHumiditySensorGpio; // Store as string to match explode/implode
+            $relayPinsArray[$channelIndex] = (string)$newPumpGpio;       // Store as string
+        } else {
+            $dashboardError = 'Ungültiger Kanalindex für GPIO-Konfiguration.';
+            // Don't save if invalid
+            header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+            exit;
+        }
+
+        // Reconstruct comma-separated strings
+        $updatedSoilPinsStr = implode(',', $soilPinsArray);
+        $updatedRelayPinsStr = implode(',', $relayPinsArray);
+        
         writeJsonFile(gpioConfigPath($dataDir, $deviceId), [
-            'soil_sensor_pins' => $soilSensorPins,
-            'relay_pins' => $relayPins,
+            'soil_sensor_pins' => $updatedSoilPinsStr,
+            'relay_pins' => $updatedRelayPinsStr,
             'updated_at' => gmdate('c'),
         ]);
         // Redirect to refresh the page and show updated values, anchor to the device card
@@ -442,6 +472,10 @@ foreach ($devices as $device) {
             'soil_sensor_pins' => '34,35,36,39', // Default from src/main.cpp
             'relay_pins' => '26,25,32,33',     // Default from src/main.cpp
         ]);
+        $soilPinsArray = explode(',', $gpioConfig['soil_sensor_pins']);
+        $relayPinsArray = explode(',', $gpioConfig['relay_pins']);
+        $soilPinsArray = array_pad($soilPinsArray, PHP_CHANNEL_COUNT, '0');
+        $relayPinsArray = array_pad($relayPinsArray, PHP_CHANNEL_COUNT, '0');
         $canvasId = 'history-' . preg_replace('/[^a-zA-Z0-9_-]/', '-', $deviceId);
       ?>
       <article class="card" id="device-<?= htmlspecialchars($deviceId) ?>">
@@ -501,27 +535,31 @@ foreach ($devices as $device) {
                 </div>
               </form>
               <p class="muted">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></p>
+
+              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+              <section class="gpio-config">
+                <h4>GPIO Einstellungen für Kanal <?= $channelIndex + 1 ?></h4>
+                <form method="post">
+                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                  <input type="hidden" name="action" value="save_channel_gpio_config">
+                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
+
+                  <label for="humidity_sensor_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Feuchtigkeitssensor GPIO</label>
+                  <input id="humidity_sensor_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="humidity_sensor_gpio" type="number" value="<?= htmlspecialchars($soilPinsArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+
+                  <label for="pump_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Pumpen GPIO</label>
+                  <input id="pump_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="pump_gpio" type="number" value="<?= htmlspecialchars($relayPinsArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+
+                  <button type="submit" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>GPIO für Kanal speichern</button>
+                </form>
+                <?php if ($state['key'] === 'offline'): ?>
+                  <p class="muted" style="margin-top: 10px;">Gerät ist offline. GPIO Einstellungen können nicht geändert werden.</p>
+                <?php endif; ?>
+              </section>
             </section>
           <?php endforeach; ?>
-        </div>
-
-        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
-
-        <section class="gpio-config">
-          <h3>GPIO Einstellungen</h3>
-          <form method="post">
-            <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
-            <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-            <input type="hidden" name="action" value="save_gpio_config">
-            <label for="soil_<?= htmlspecialchars($deviceId) ?>">Feuchtigkeitssensor Pins (Komma-getrennt)</label>
-            <input id="soil_<?= htmlspecialchars($deviceId) ?>" name="soil_sensor_pins" type="text" value="<?= htmlspecialchars($gpioConfig['soil_sensor_pins'] ?? '34,35,36,39') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-            <label for="relay_<?= htmlspecialchars($deviceId) ?>">Relay Pins (Komma-getrennt)</label>
-            <input id="relay_<?= htmlspecialchars($deviceId) ?>" name="relay_pins" type="text" value="<?= htmlspecialchars($gpioConfig['relay_pins'] ?? '26,25,32,33') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-            <button type="submit" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>GPIO Einstellungen speichern</button>
-          </form>
-          <?php if ($state['key'] === 'offline'): ?>
-            <p class="muted" style="margin-top: 10px;">Gerät ist offline. GPIO Einstellungen können nicht geändert werden.</p>
-          <?php endif; ?>
         </div>
         <p class="muted">Letzter Befehl: Kanal <?= (int) (($command['channel'] ?? 0) + 1) ?> · <?= htmlspecialchars($command['pump'] ?? 'keiner') ?> <?= empty($command['acked_at']) ? '' : '· bestaetigt' ?></p>
       </article>
