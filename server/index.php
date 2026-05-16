@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const DEFAULT_API_KEY = 'change-me';
 const PHP_CHANNEL_COUNT = 4; // Must match CHANNEL_COUNT in src/main.cpp
+const DASHBOARD_REFRESH_SECONDS = 15;
 const HISTORY_LIMIT = 240;
 
 $dataDir = __DIR__ . '/data';
@@ -660,6 +661,7 @@ foreach ($devices as $device) {
         <input type="checkbox" id="autoRefreshToggle" checked>
         <label for="autoRefreshToggle">Auto</label>
         <span id="refreshCountdown">15</span>s
+        <span id="refreshCountdown"><?= DASHBOARD_REFRESH_SECONDS ?></span>s
       </span>
     </div>
   </div>
@@ -667,6 +669,7 @@ foreach ($devices as $device) {
   <div class="api-bar">
     <label for="globalApiKey">API Key</label>
     <input id="globalApiKey" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key eingeben…" autocomplete="current-password">
+    <button type="button" id="saveApiKeyBtn" class="pill" style="cursor:pointer; border:1px solid #c6d5ce; background:#f0f4f2;">Speichern</button>
   </div>
 
   <?php if ($dashboardError): ?><p class="error"><?= htmlspecialchars($dashboardError) ?></p><?php endif; ?>
@@ -862,6 +865,23 @@ $(function() {
     const v = val !== undefined ? val : $('#globalApiKey').val();
     $('input[name="api_key"]').val(v);
   }
+
+  // Logik für dauerhaften API-Key (localStorage & URL)
+  const urlParams = new URLSearchParams(window.location.search);
+  const savedKey = localStorage.getItem('hydrosense_api_key');
+  if (!urlParams.has('api_key') && savedKey) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('api_key', savedKey);
+    window.location.replace(url.href);
+  }
+
+  $('#saveApiKeyBtn').on('click', function() {
+    const key = $('#globalApiKey').val();
+    localStorage.setItem('hydrosense_api_key', key);
+    const url = new URL(window.location.href);
+    url.searchParams.set('api_key', key);
+    window.location.href = url.href;
+  });
 
   $('#globalApiKey').on('input change blur', function() {
     syncApiKey($(this).val());
