@@ -740,7 +740,7 @@ foreach ($devices as $device) {
               $pumpOn = !empty($channel['pump_on']);
               $needsWater = !empty($channel['needs_water']);
             ?>
-            <details class="channel">
+            <details class="channel" data-index="<?= $ci ?>">
               <summary class="channel-summary">
                 <h3><?= htmlspecialchars($displayName) ?></h3>
                 <span class="summary-val"><?= (int) ($channel['moisture_percent'] ?? 0) ?>%</span>
@@ -770,7 +770,7 @@ foreach ($devices as $device) {
                 <button class="btn-auto" name="pump" value="auto">Auto</button>
               </form>
 
-              <details class="ch-settings">
+              <details class="ch-settings" data-type="settings">
                 <summary>Einstellungen</summary>
                 <div class="settings-body">
 
@@ -842,7 +842,7 @@ foreach ($devices as $device) {
           Letzter Befehl: Kanal <?= (int) (($command['channel'] ?? 0) + 1) ?> · <?= htmlspecialchars($command['pump'] ?? 'keiner') ?><?= empty($command['acked_at']) ? '' : ' · bestätigt' ?>
         </p>
         
-        <details class="ch-settings danger-zone">
+        <details class="ch-settings danger-zone" data-type="danger">
           <summary style="color: #a33b2b;">Geräte-Optionen</summary>
           <form method="post" style="padding-top: 8px;" onsubmit="return confirm('Möchten Sie wirklich alle Einstellungen für dieses Gerät (Pins, Namen, Kalibrierung) auf die Standardwerte zurücksetzen?');">
             <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
@@ -949,6 +949,23 @@ $(function() {
   }, 1000);
 
   function refreshData() {
+    // 1. Offene Zustände speichern
+    const openPaths = [];
+    $('.pump-grid details[open]').each(function() {
+      const $d = $(this);
+      const deviceId = $d.closest('.card').attr('id');
+      if (!deviceId) return;
+
+      if ($d.hasClass('channel')) {
+        openPaths.push(`#${deviceId} .channel[data-index="${$d.data('index')}"]`);
+      } else if ($d.data('type') === 'settings') {
+        const channelIdx = $d.closest('.channel').data('index');
+        openPaths.push(`#${deviceId} .channel[data-index="${channelIdx}"] .ch-settings[data-type="settings"]`);
+      } else if ($d.data('type') === 'danger') {
+        openPaths.push(`#${deviceId} .danger-zone[data-type="danger"]`);
+      }
+    });
+
     $.get(window.location.href, function(data) {
       const $new = $($.parseHTML(data));
       $('.header-meta .pill').each(function(i) {
@@ -956,6 +973,12 @@ $(function() {
       });
       if (!$(document.activeElement).is('input, textarea')) {
         $('.pump-grid').html($new.find('.pump-grid').html());
+        
+        // 2. Offene Zustände wiederherstellen
+        openPaths.forEach(path => {
+          $(path).attr('open', true);
+        });
+
         initCharts();
         syncApiKey();
       }
