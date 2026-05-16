@@ -775,6 +775,8 @@ void loadGpioConfig() {
 void saveGpioConfig(const String& soilPinsStr, const String& relayPinsStr, const String& dryRawStr, const String& wetRawStr) {
     preferences.putString("soil_pins", soilPinsStr);
     preferences.putString("relay_pins", relayPinsStr);
+    preferences.putString("dry_raw", dryRawStr);
+    preferences.putString("wet_raw", wetRawStr);
     Serial.println(F("New GPIO configuration saved to preferences. Rebooting to apply..."));
     delay(1000); // Give time for serial output to flush
     ESP.restart();

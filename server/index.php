@@ -318,7 +318,15 @@ if ($api === 'gpio_config') {
 
 
 $dashboardError = '';
+$dashboardMessage = '';
 $dashboardKey = (string) ($_POST['api_key'] ?? $_GET['api_key'] ?? '');
+
+if (($_GET['msg'] ?? '') === 'saved') {
+    $dashboardMessage = 'Die Einstellungen wurden erfolgreich gespeichert.';
+} elseif (($_GET['msg'] ?? '') === 'cmd') {
+    $dashboardMessage = 'Der Befehl wurde an das Gerät übermittelt.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pump'])) {
     if (!hash_equals($apiKey, $dashboardKey)) {
         $dashboardError = 'API key ist falsch.';
@@ -335,7 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pump'])) {
             'created_at' => gmdate('c'),
             'acked_at' => null,
         ]);
-        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey));
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=cmd');
         exit;
     }
 }
@@ -423,7 +431,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $currentGpioConfig['updated_at'] = gmdate('c'); // Update timestamp
 
         writeJsonFile(gpioConfigPath($dataDir, $deviceId), $currentGpioConfig);
-        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved#device-' . urlencode($deviceId));
         exit;
     }
 }
@@ -474,7 +482,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $currentGpioConfig['updated_at'] = gmdate('c'); // Update timestamp
 
         writeJsonFile(gpioConfigPath($dataDir, $deviceId), $currentGpioConfig);
-        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved#device-' . urlencode($deviceId));
         exit;
     }
 }
@@ -519,18 +527,27 @@ foreach ($devices as $device) {
     .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .metric { border: 1px solid #e1ebe6; border-radius: 7px; padding: 12px; min-width: 0; }
     .channel-grid { display: grid; gap: 12px; }
-    .channel { border: 1px solid #dbe7e1; border-radius: 8px; padding: 12px; }
+    .channel { border: 1px solid #dbe7e1; border-radius: 8px; padding: 14px; background: #fafcfb; }
     .channel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
     .channel-head h3 { margin: 0; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
+    .status-pill { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+    .status-pill.on { background: #1d6f54; color: #fff; }
+    .status-pill.off { background: #f0f4f2; color: #63736c; border: 1px solid #d9e4df; }
     .label { font-size: 13px; color: #63736c; margin-bottom: 8px; }
-    .value { font-size: clamp(26px, 6vw, 40px); font-weight: 750; line-height: 1; overflow-wrap: anywhere; }
+    .value { font-size: clamp(22px, 5vw, 32px); font-weight: 800; line-height: 1; overflow-wrap: anywhere; }
+    .small-info { font-size: 11px; color: #63736c; margin-top: 4px; line-height: 1.3; }
     canvas { width: 100%; height: 160px; display: block; margin-top: 12px; border-top: 1px solid #edf3f0; }
     form { display: grid; gap: 10px; }
     input { width: 100%; box-sizing: border-box; border: 1px solid #c6d5ce; border-radius: 6px; padding: 10px 12px; font: inherit; }
     .button-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-    button { border: 0; border-radius: 6px; padding: 12px 14px; font: inherit; font-weight: 700; cursor: pointer; background: #1d6f54; color: #fff; }
-    button.secondary { background: #40534b; }
-    button.danger { background: #a43d2d; }
+    button { border: 0; border-radius: 6px; padding: 10px 8px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; background: #1d6f54; color: #fff; transition: opacity 0.2s; }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: #5a7066; }
+    button.danger { background: #c04836; }
+    .success { color: #1d6f54; background: #eef7f3; border: 1px solid #d9e4df; border-radius: 6px; padding: 12px; margin-bottom: 20px; font-weight: 700; }
+    details { margin-top: 12px; border-top: 1px solid #eee; padding-top: 8px; }
+    summary { font-size: 12px; font-weight: 700; color: #1d6f54; cursor: pointer; padding: 4px 0; display: flex; align-items: center; gap: 6px; }
+    summary:hover { text-decoration: underline; }
     .error { color: #a43d2d; font-weight: 700; }
     .empty { padding: 28px; text-align: center; }
     @media (max-width: 720px) { header { display: block; } .summary { justify-content: flex-start; margin-top: 14px; } .pump-grid { grid-template-columns: 1fr; } }
@@ -557,6 +574,7 @@ foreach ($devices as $device) {
   </header>
 
   <?php if ($dashboardError): ?><p class="error"><?= htmlspecialchars($dashboardError) ?></p><?php endif; ?>
+  <?php if ($dashboardMessage): ?><div class="success" id="successMsg"><?= htmlspecialchars($dashboardMessage) ?></div><?php endif; ?>
 
   <section class="pump-grid">
     <?php if (empty($devices)): ?>
@@ -623,27 +641,23 @@ foreach ($devices as $device) {
             <section class="channel">
               <div class="channel-head">
                 <h3><?= htmlspecialchars($displayName) ?></h3>
-                <span class="status-pill <?= !empty($channel['pump_on']) ? 'on' : 'off' ?>">
-                  <?= !empty($channel['pump_on']) ? 'Pumpt' : 'Bereit' ?>
-                </span>
+                <strong><?= !empty($channel['pump_on']) ? 'AN' : 'AUS' ?></strong>
               </div>
-              <div class="metrics" style="margin-bottom: 12px;">
+              <div class="metrics">
                 <div class="metric">
                   <div class="label">Feuchtigkeit</div>
                   <div class="value"><?= (int) ($channel['moisture_percent'] ?? 0) ?>%</div>
-                  <div class="small-info">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></div>
                 </div>
                 <div class="metric">
                   <div class="label">Sensor raw</div>
                   <div class="value"><?= (int) ($channel['soil_raw'] ?? 0) ?></div>
-                  <div class="small-info">
-                    ADC: <?= (int) ($channel['soil_raw12'] ?? 0) ?><br>
-                    Range: <?= (int) ($channel['dry_raw'] ?? 0) ?> - <?= (int) ($channel['wet_raw'] ?? 0) ?>
-                  </div>
+                  <div class="muted">ADC12 <?= (int) ($channel['soil_raw12'] ?? 0) ?></div>
+                  <div class="muted">Trocken: <?= (int) ($channel['dry_raw'] ?? 0) ?></div>
+                  <div class="muted">Nass: <?= (int) ($channel['wet_raw'] ?? 0) ?></div>
                 </div>
               </div>
               <form method="post">
-                <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
+                <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
                 <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
                 <input type="hidden" name="channel" value="<?= $channelIndex ?>">
                 <div class="button-row">
@@ -652,64 +666,67 @@ foreach ($devices as $device) {
                   <button class="secondary" name="pump" value="auto">Auto</button>
                 </div>
               </form>
+              <p class="muted">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></p>
 
-              <details>
-                <summary>⚙️ Einstellungen</summary>
-                <div style="padding-top: 10px; display: grid; gap: 15px;">
-                  
-                  <section class="name-config">
-                    <form method="post">
-                      <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
-                      <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-                      <input type="hidden" name="action" value="save_channel_name_config">
-                      <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
-                      <label class="small-info" for="n_<?= $channelIndex ?>">Kanalname</label>
-                      <input id="n_<?= $channelIndex ?>" name="channel_name" type="text" value="<?= htmlspecialchars($channelNamesArray[$channelIndex] ?? '') ?>" placeholder="z.B. Tomaten">
-                      <button type="submit" class="secondary">Name speichern</button>
-                    </form>
-                  </section>
+              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
 
-                  <section class="calibration-config">
-                    <form method="post">
-                      <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
-                      <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-                      <input type="hidden" name="action" value="save_channel_calibration_config">
-                      <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
-                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                        <div>
-                          <label class="small-info">Trocken (Luft)</label>
-                          <input name="dry_raw_value" type="number" value="<?= htmlspecialchars($dryRawArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-                        </div>
-                        <div>
-                          <label class="small-info">Nass (Wasser)</label>
-                          <input name="wet_raw_value" type="number" value="<?= htmlspecialchars($wetRawArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-                        </div>
-                      </div>
-                      <button type="submit" class="secondary" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>Kalibrierung speichern</button>
-                    </form>
-                  </section>
+              <section class="name-config">
+                <form method="post">
+                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                  <input type="hidden" name="action" value="save_channel_name_config">
+                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
+                  <label for="channel_name_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Kanalname bearbeiten</label>
+                  <input id="channel_name_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="channel_name" type="text" value="<?= htmlspecialchars($channelNamesArray[$channelIndex] ?? '') ?>" placeholder="z.B. Tomaten">
+                  <button type="submit">Name speichern</button>
+                </form>
+              </section>
 
-                  <section class="gpio-config">
-                    <form method="post">
-                      <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
-                      <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-                      <input type="hidden" name="action" value="save_channel_gpio_config">
-                      <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
-                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                        <div>
-                          <label class="small-info">Sensor GPIO</label>
-                          <input name="humidity_sensor_gpio" type="number" value="<?= htmlspecialchars($soilPinsArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-                        </div>
-                        <div>
-                          <label class="small-info">Pumpe GPIO</label>
-                          <input name="pump_gpio" type="number" value="<?= htmlspecialchars($relayPinsArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
-                        </div>
-                      </div>
-                      <button type="submit" class="secondary" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>GPIO speichern</button>
-                    </form>
-                  </section>
-                </div>
-              </details>
+              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+              <section class="calibration-config">
+                <h4>Kalibrierung für Kanal <?= $channelIndex + 1 ?></h4>
+                <form method="post">
+                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                  <input type="hidden" name="action" value="save_channel_calibration_config">
+                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
+
+                  <label for="dry_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Trocken (Luft) Wert</label>
+                  <input id="dry_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="dry_raw_value" type="number" value="<?= htmlspecialchars($dryRawArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+
+                  <label for="wet_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Nass (Wasser) Wert</label>
+                  <input id="wet_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="wet_raw_value" type="number" value="<?= htmlspecialchars($wetRawArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+
+                  <button type="submit" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>Kalibrierung speichern</button>
+                </form>
+                <?php if ($state['key'] === 'offline'): ?>
+                  <p class="muted" style="margin-top: 10px;">Gerät ist offline. Kalibrierung kann nicht geändert werden.</p>
+                <?php endif; ?>
+              </section>
+
+              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+              <section class="gpio-config">
+                <h4>GPIO Einstellungen für Kanal <?= $channelIndex + 1 ?></h4>
+                <form method="post">
+                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                  <input type="hidden" name="action" value="save_channel_gpio_config">
+                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
+
+                  <label for="humidity_sensor_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Feuchtigkeitssensor GPIO</label>
+                  <input id="humidity_sensor_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="humidity_sensor_gpio" type="number" value="<?= htmlspecialchars($soilPinsArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+
+                  <label for="pump_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Pumpen GPIO</label>
+                  <input id="pump_gpio_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="pump_gpio" type="number" value="<?= htmlspecialchars($relayPinsArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+
+                  <button type="submit" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>GPIO für Kanal speichern</button>
+                </form>
+                <?php if ($state['key'] === 'offline'): ?>
+                  <p class="muted" style="margin-top: 10px;">Gerät ist offline. GPIO Einstellungen können nicht geändert werden.</p>
+                <?php endif; ?>
+              </section>
             </section>
           <?php endforeach; ?>
         </div>
@@ -789,6 +806,16 @@ $(function() {
     }).fail(function(err) {
       console.error('Auto-refresh failed:', err);
     });
+  }
+
+  if ($('#successMsg').length) {
+    setTimeout(() => {
+      $('#successMsg').fadeOut(500);
+      // URL-Parameter bereinigen, damit die Meldung bei manuellem Refresh nicht erneut erscheint
+      const url = new URL(window.location.href);
+      url.searchParams.delete('msg');
+      window.history.replaceState({}, '', url);
+    }, 4000);
   }
 });
 </script>
