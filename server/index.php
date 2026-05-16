@@ -69,6 +69,43 @@ function boolValue(array $payload, string $key): bool
     return filter_var($payload[$key] ?? false, FILTER_VALIDATE_BOOL);
 }
 
+function normalizeChannels(array $payload): array
+{
+    if (isset($payload['channels']) && is_array($payload['channels'])) {
+        $channels = [];
+        foreach ($payload['channels'] as $index => $channel) {
+            if (!is_array($channel)) {
+                continue;
+            }
+            $channels[] = [
+                'index' => (int) ($channel['index'] ?? $index),
+                'name' => trim((string) ($channel['name'] ?? '')) ?: 'Pump ' . (((int) ($channel['index'] ?? $index)) + 1),
+                'moisture_percent' => numberValue($channel, 'moisture_percent'),
+                'soil_raw' => numberValue($channel, 'soil_raw'),
+                'soil_raw12' => numberValue($channel, 'soil_raw12'),
+                'pump_on' => boolValue($channel, 'pump_on'),
+                'pump_mode' => textValue($channel, 'pump_mode', 'auto'),
+                'needs_water' => boolValue($channel, 'needs_water'),
+            ];
+        }
+        if ($channels) {
+            usort($channels, static fn (array $a, array $b): int => $a['index'] <=> $b['index']);
+            return $channels;
+        }
+    }
+
+    return [[
+        'index' => 0,
+        'name' => 'Pump 1',
+        'moisture_percent' => numberValue($payload, 'moisture_percent'),
+        'soil_raw' => numberValue($payload, 'soil_raw'),
+        'soil_raw12' => numberValue($payload, 'soil_raw12'),
+        'pump_on' => boolValue($payload, 'pump_on'),
+        'pump_mode' => textValue($payload, 'pump_mode', 'auto'),
+        'needs_water' => boolValue($payload, 'needs_water'),
+    ]];
+}
+
 function loadHistory(string $path): array
 {
     if (!is_file($path)) {
@@ -167,10 +204,15 @@ if ($api === 'telemetry') {
         'battery_mv' => numberValue($payload, 'battery_mv'),
         'battery_percent' => numberValue($payload, 'battery_percent'),
         'battery_adc_raw' => numberValue($payload, 'battery_adc_raw'),
-        'pump_on' => boolValue($payload, 'pump_on'),
-        'pump_mode' => textValue($payload, 'pump_mode', 'auto'),
-        'needs_water' => boolValue($payload, 'needs_water'),
+        'channels' => normalizeChannels($payload),
     ];
+    $firstChannel = $entry['channels'][0] ?? [];
+    $entry['moisture_percent'] = (int) ($firstChannel['moisture_percent'] ?? 0);
+    $entry['soil_raw'] = (int) ($firstChannel['soil_raw'] ?? 0);
+    $entry['soil_raw12'] = (int) ($firstChannel['soil_raw12'] ?? 0);
+    $entry['pump_on'] = (bool) ($firstChannel['pump_on'] ?? false);
+    $entry['pump_mode'] = (string) ($firstChannel['pump_mode'] ?? 'auto');
+    $entry['needs_water'] = (bool) ($firstChannel['needs_water'] ?? false);
     writeJsonFile(statusPath($dataDir, $entry['device_id']), $entry);
     appendHistory(historyPath($dataDir, $entry['device_id']), $entry);
     jsonResponse(['ok' => true]);
@@ -187,6 +229,7 @@ if ($api === 'command') {
         'ok' => true,
         'command_id' => (int) ($command['command_id'] ?? 0),
         'pump' => $command['pump'] ?? null,
+        'channel' => (int) ($command['channel'] ?? 0),
     ]);
 }
 
@@ -200,6 +243,9 @@ if ($api === 'ack') {
         $command['acked_at'] = gmdate('c');
         $command['reported_pump_on'] = boolValue($payload, 'pump_on');
         $command['reported_pump_mode'] = textValue($payload, 'pump_mode', '');
+        if (isset($payload['channels']) && is_array($payload['channels'])) {
+            $command['reported_channels'] = normalizeChannels($payload);
+        }
         writeJsonFile($path, $command);
     }
     jsonResponse(['ok' => true]);
@@ -212,11 +258,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pump'])) {
         $dashboardError = 'API key ist falsch.';
     } else {
         $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
+        $channel = max(0, (int) ($_POST['channel'] ?? 0));
         $pump = in_array($_POST['pump'], ['on', 'off', 'auto'], true) ? $_POST['pump'] : 'auto';
         $previous = readJsonFile(commandPath($dataDir, $deviceId), ['command_id' => 0]);
         writeJsonFile(commandPath($dataDir, $deviceId), [
             'command_id' => ((int) ($previous['command_id'] ?? 0)) + 1,
             'device_id' => $deviceId,
+            'channel' => $channel,
             'pump' => $pump,
             'created_at' => gmdate('c'),
             'acked_at' => null,
@@ -264,6 +312,10 @@ foreach ($devices as $device) {
     .status-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--status-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-color) 18%, transparent); }
     .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .metric { border: 1px solid #e1ebe6; border-radius: 7px; padding: 12px; min-width: 0; }
+    .channel-grid { display: grid; gap: 12px; }
+    .channel { border: 1px solid #dbe7e1; border-radius: 8px; padding: 12px; }
+    .channel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .channel-head h3 { margin: 0; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
     .label { font-size: 13px; color: #63736c; margin-bottom: 8px; }
     .value { font-size: clamp(26px, 6vw, 40px); font-weight: 750; line-height: 1; overflow-wrap: anywhere; }
     canvas { width: 100%; height: 160px; display: block; margin-top: 12px; border-top: 1px solid #edf3f0; }
@@ -303,6 +355,7 @@ foreach ($devices as $device) {
       <?php
         $deviceId = textValue($device, 'device_id', 'hydrosense-esp32');
         $state = deviceStatus($device);
+        $channels = normalizeChannels($device);
         $history = loadHistory(historyPath($dataDir, $deviceId));
         $command = readJsonFile(commandPath($dataDir, $deviceId), []);
         $canvasId = 'history-' . preg_replace('/[^a-zA-Z0-9_-]/', '-', $deviceId);
@@ -319,40 +372,55 @@ foreach ($devices as $device) {
           </div>
         </div>
 
-        <div class="metrics">
-          <div class="metric">
-            <div class="label">Feuchtigkeit</div>
-            <div class="value"><?= (int) ($device['moisture_percent'] ?? 0) ?>%</div>
-          </div>
-          <div class="metric">
-            <div class="label">Batterie</div>
-            <div class="value"><?= (int) ($device['battery_percent'] ?? 0) ?>%</div>
-            <div class="muted"><?= number_format(((int) ($device['battery_mv'] ?? 0)) / 1000, 2) ?> V</div>
-          </div>
-          <div class="metric">
-            <div class="label">Pumpe</div>
-            <div class="value"><?= !empty($device['pump_on']) ? 'AN' : 'AUS' ?></div>
-            <div class="muted"><?= htmlspecialchars($device['pump_mode'] ?? 'auto') ?></div>
-          </div>
-          <div class="metric">
-            <div class="label">Sensor raw</div>
-            <div class="value"><?= (int) ($device['soil_raw'] ?? 0) ?></div>
-            <div class="muted">ADC12 <?= (int) ($device['soil_raw12'] ?? 0) ?></div>
-          </div>
+        <div class="metrics" style="margin-bottom: 12px;">
+            <div class="metric">
+              <div class="label">Batterie</div>
+              <div class="value"><?= (int) ($device['battery_percent'] ?? 0) ?>%</div>
+              <div class="muted"><?= number_format(((int) ($device['battery_mv'] ?? 0)) / 1000, 2) ?> V</div>
+            </div>
+            <div class="metric">
+              <div class="label">Kanaele</div>
+              <div class="value"><?= count($channels) ?></div>
+              <div class="muted">Relays / Sensoren</div>
+            </div>
         </div>
 
         <canvas class="history-canvas" id="<?= htmlspecialchars($canvasId) ?>" width="520" height="160" data-history="<?= htmlspecialchars(json_encode($history, JSON_UNESCAPED_SLASHES)) ?>"></canvas>
 
-        <form method="post">
-          <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
-          <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
-          <div class="button-row">
-            <button name="pump" value="on">An</button>
-            <button class="danger" name="pump" value="off">Aus</button>
-            <button class="secondary" name="pump" value="auto">Auto</button>
-          </div>
-        </form>
-        <p class="muted">Letzter Befehl: <?= htmlspecialchars($command['pump'] ?? 'keiner') ?> <?= empty($command['acked_at']) ? '' : '· bestaetigt' ?></p>
+        <div class="channel-grid">
+          <?php foreach ($channels as $channel): ?>
+            <?php $channelIndex = (int) ($channel['index'] ?? 0); ?>
+            <section class="channel">
+              <div class="channel-head">
+                <h3><?= htmlspecialchars($channel['name'] ?? ('Pump ' . ($channelIndex + 1))) ?></h3>
+                <strong><?= !empty($channel['pump_on']) ? 'AN' : 'AUS' ?></strong>
+              </div>
+              <div class="metrics">
+                <div class="metric">
+                  <div class="label">Feuchtigkeit</div>
+                  <div class="value"><?= (int) ($channel['moisture_percent'] ?? 0) ?>%</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Sensor raw</div>
+                  <div class="value"><?= (int) ($channel['soil_raw'] ?? 0) ?></div>
+                  <div class="muted">ADC12 <?= (int) ($channel['soil_raw12'] ?? 0) ?></div>
+                </div>
+              </div>
+              <form method="post">
+                <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+                <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                <input type="hidden" name="channel" value="<?= $channelIndex ?>">
+                <div class="button-row">
+                  <button name="pump" value="on">An</button>
+                  <button class="danger" name="pump" value="off">Aus</button>
+                  <button class="secondary" name="pump" value="auto">Auto</button>
+                </div>
+              </form>
+              <p class="muted">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></p>
+            </section>
+          <?php endforeach; ?>
+        </div>
+        <p class="muted">Letzter Befehl: Kanal <?= (int) (($command['channel'] ?? 0) + 1) ?> · <?= htmlspecialchars($command['pump'] ?? 'keiner') ?> <?= empty($command['acked_at']) ? '' : '· bestaetigt' ?></p>
       </article>
     <?php endforeach; ?>
   </section>

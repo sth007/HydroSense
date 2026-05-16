@@ -1,6 +1,6 @@
 # HydroSense ESP32-C3 SuperMini
 
-PlatformIO/Arduino project for an ESP32-C3 SuperMini that reads a Grove - Moisture Sensor V1.4, shows status on a 4.2" WeAct Studio ePaper, and controls a 3-5 V mini water pump through a 1-channel 5 V relay module.
+PlatformIO/Arduino project for an ESP32-C3 SuperMini that reads 4 Grove-style analog humidity sensors and controls 4 water pump relays or MOSFET channels. The ESP32 sends all channel values to a PHP dashboard/API server and receives pump commands per channel.
 
 ## Quick Installation
 
@@ -38,27 +38,27 @@ Use the same value for `API_KEY` and `HYDROSENSE_API_KEY`. Use a different `DEVI
 
 ## Wiring
 
-### Grove - Moisture Sensor V1.4
+### Humidity Sensors
 
-The Grove - Moisture Sensor V1.4 is an analog resistive moisture sensor. Its output value normally increases when the soil is wetter.
+The firmware supports 4 analog humidity sensors. The default ESP32-C3 ADC pins are:
 
-| Grove wire | Function | ESP32-C3 SuperMini |
+| Channel | Sensor analog output | Default ESP32-C3 pin |
 | --- | --- | --- |
-| Red | VCC | 3V3 |
-| Black | GND | GND |
-| White | NC | Not connected |
-| Yellow | Analog output | GPIO1 / ADC1-1 |
+| 1 | AOUT / yellow | GPIO34 |
+| 2 | AOUT / yellow | GPIO35 |
+| 3 | AOUT / yellow | GPIO36 |
+| 4 | AOUT / yellow | GPIO39 |
 
-Do not power the Grove sensor from 5 V when its analog output is connected directly to the ESP32-C3. ESP32-C3 ADC pins are not 5 V tolerant. Use `3V3`, or use a voltage divider/level shifter if you must power the sensor from 5 V.
+Power the sensors from `3V3` and connect all sensor grounds to ESP32 `GND`. Do not power analog sensors from 5 V when their output is connected directly to an ESP32-C3 GPIO. ESP32-C3 ADC pins are not 5 V tolerant.
 
 ### Battery measurement
 
 Your battery is a 103450 3.7 V 2000 mAh lithium-polymer battery with JST-PH 2.0 connector. This is a 1S LiPo cell: about 4.2 V when full, about 3.7 V nominal, and about 3.3 V near empty.
 
-The ESP32-C3 cannot measure battery capacity directly. The firmware estimates battery state from voltage. Connect the battery to `GPIO0 / ADC1-0` through a voltage divider:
+Battery measurement is disabled by default because the 4 humidity sensors use the ADC pins. If you add an external ADC or free one ADC pin, enable `BATTERY_MONITOR_ENABLED` in `src/main.cpp` and connect the battery through a voltage divider:
 
 ```text
-Battery + -> 100k resistor -> GPIO0 / ADC1-0 -> 100k resistor -> GND
+Battery + -> 100k resistor -> ADC pin -> 100k resistor -> GND
 Battery - -> GND
 ```
 
@@ -73,41 +73,26 @@ BATTERY_FULL_MV = 4200
 
 The shown percentage is an estimate from voltage, not a true coulomb-counted capacity measurement. The `2000 mAh` rating affects runtime, but not the ADC wiring.
 
-### 4.2" WeAct Studio ePaper
+### Relay / MOSFET Outputs
 
-This follows the wiring in your diagram.
+The default relay/MOSFET pins are:
 
-| ePaper pin | ESP32-C3 SuperMini |
+| Channel | Default ESP32-C3 pin |
 | --- | --- |
-| VCC | 3V3 |
-| GND | GND |
-| SDA / DIN / MOSI | GPIO6 |
-| SCL / CLK / SCK | GPIO4 |
-| CS | GPIO7 |
-| D/C | GPIO5 |
-| RES | GPIO3 |
-| BUSY | GPIO8 |
-| MISO | GPIO20 |
+| Pump 1 | GPIO26 |
+| Pump 2 | GPIO25 |
+| Pump 3 | GPIO32 |
+| Pump 4 | GPIO33 |
 
-### Relay module
+The ESP32-C3 GND and pump power supply negative must be connected together. If your relay board is active-low, change `RELAY_ACTIVE_LOW` in `src/main.cpp`.
 
-| Pump MOSFET control | ESP32-C3 SuperMini / power |
-| --- | --- |
-| MOSFET gate, through 100 ohm resistor | GPIO21 |
-| MOSFET source | GND |
-| MOSFET gate pulldown | 100k to GND |
-
-The ESP32-C3 GND and pump power supply negative must be connected together.
-
-### Pump through relay contact
-
-Wire the pump through a separate logic-level N-channel MOSFET, not directly through an ESP32 pin.
+For MOSFET switching, wire each pump like this:
 
 ```text
 Pump supply +  -> pump +
 pump -         -> MOSFET drain
 MOSFET source  -> pump supply -
-ESP32 GPIO21   -> 100 ohm -> MOSFET gate
+ESP32 GPIO     -> 100 ohm -> MOSFET gate
 MOSFET gate    -> 100k -> GND
 ```
 
@@ -118,7 +103,7 @@ Diode stripe/cathode -> pump +
 Diode anode          -> pump -
 ```
 
-The pump is rated DC 3-5 V, so use a suitable external supply or battery for the pump current. Do not power the pump from an ESP32 GPIO.
+Use a suitable external supply or battery for pump current. Do not power a pump from an ESP32 GPIO.
 
 ## Pin Choices
 
@@ -126,32 +111,30 @@ The default code uses:
 
 | Function | ESP32-C3 pin |
 | --- | --- |
-| Soil sensor ADC | GPIO1 / ADC1-1 |
-| Battery ADC | GPIO0 / ADC1-0 |
-| Pump MOSFET gate | GPIO21 |
-| ePaper MOSI | GPIO6 |
-| ePaper MISO | GPIO20 |
-| ePaper SCK | GPIO4 |
-| ePaper CS | GPIO7 |
-| ePaper D/C | GPIO5 |
-| ePaper RES | GPIO3 |
-| ePaper BUSY | GPIO8 |
+| Humidity sensor 1 ADC | GPIO34 |
+| Humidity sensor 2 ADC | GPIO35 |
+| Humidity sensor 3 ADC | GPIO36 |
+| Humidity sensor 4 ADC | GPIO39 |
+| Pump 1 relay/MOSFET | GPIO26 |
+| Pump 2 relay/MOSFET | GPIO25 |
+| Pump 3 relay/MOSFET | GPIO32 |
+| Pump 4 relay/MOSFET | GPIO33 |
 
-If your relay behaves inverted, change `RELAY_ACTIVE_LOW` in `src/main.cpp`.
+Adjust `SOIL_SENSOR_PINS` and `RELAY_PINS` in `src/main.cpp` to match your wiring.
 
 ## Calibration
 
 1. Upload the firmware.
 2. Open the serial monitor at `115200`.
-3. Read the `raw=` value with the sensor in dry air or dry soil and put it into `DRY_RAW`.
-4. Read the `raw=` value with the sensor in water or very wet soil and put it into `WET_RAW`.
+3. Read the `ch=... raw=...` values with each sensor in dry air or dry soil and put them into `DRY_RAW`.
+4. Read the values with each sensor in water or very wet soil and put them into `WET_RAW`.
 5. Upload again.
 
-Defaults for the Grove V1.4 are set for 10-bit-style readings:
+Defaults are set per channel for 10-bit-style readings:
 
 ```cpp
-#define DRY_RAW 0
-#define WET_RAW 626
+constexpr int DRY_RAW[CHANNEL_COUNT] = {0, 0, 0, 0};
+constexpr int WET_RAW[CHANNEL_COUNT] = {626, 626, 626, 626};
 ```
 
 Typical Grove V1.4 ranges from Seeed are:
@@ -171,37 +154,16 @@ The pump starts when moisture is at or below `START_WATERING_PERCENT` and stops 
 ```cpp
 #define START_WATERING_PERCENT 35
 #define STOP_WATERING_PERCENT 55
+#define AUTO_WATERING_ENABLED false
 #define MAX_PUMP_RUN_MS 15000
 #define PUMP_COOLDOWN_MS 30000
 ```
 
-`MAX_PUMP_RUN_MS` protects against endless pumping if the sensor fails or the reservoir is empty. `PUMP_COOLDOWN_MS` prevents rapid repeated pump starts.
-
-## Display
-
-The ePaper shows:
-
-| Area | Content |
-| --- | --- |
-| Current moisture | Percent, raw sensor value, OK/WATER state |
-| History | Last 64 moisture samples |
-| Pump | Current relay/pump state |
-| Battery | Voltage estimate and percent |
-
-The firmware has `USE_THREE_COLOR_EPAPER = 1` in `src/main.cpp` and uses `GxEPD2_420c_GDEY042Z98` for a red/black/white 4.2" panel. Low-moisture warning values are drawn with `GxEPD_RED`.
-
-To reduce ePaper flashing, the sensor is still read every 2 seconds, but the display is refreshed only when something important changes or every 10 minutes:
-
-```cpp
-#define DISPLAY_INTERVAL_MS 600000
-#define HISTORY_SAMPLE_INTERVAL_MS 60000
-```
-
-The history graph stores one point per minute.
+`AUTO_WATERING_ENABLED` is disabled by default so uncalibrated sensor values cannot start pumps unexpectedly. Server commands can still switch pumps on/off. `MAX_PUMP_RUN_MS` protects against endless pumping if the sensor fails or the reservoir is empty. `PUMP_COOLDOWN_MS` prevents rapid repeated pump starts.
 
 ## Server API and Dashboard
 
-This project includes a small PHP server in `server/index.php`. It stores the latest ESP32 telemetry and a short history as local JSON files under `server/data/`, then renders a simple dashboard with current values, a moisture graph, and pump commands.
+This project includes a small PHP server in `server/index.php`. It stores the latest ESP32 telemetry and a short history as local JSON files under `server/data/`, then renders a responsive dashboard with one ESP32 card and four pump/sensor channel controls.
 
 Run it locally for testing:
 
