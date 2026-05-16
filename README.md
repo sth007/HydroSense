@@ -7,7 +7,7 @@ PlatformIO/Arduino project for an ESP32-C3 SuperMini that reads a Grove - Moistu
 Clone the repository from GitHub:
 
 ```sh
-git clone https://github.com/YOUR_GITHUB_USER/HydroSense.git
+git clone https://github.com/sth007/HydroSense.git
 cd HydroSense
 ```
 
