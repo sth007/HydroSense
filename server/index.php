@@ -574,8 +574,17 @@ foreach ($devices as $device) {
 
     /* Channel */
     .channel-grid { display: grid; gap: 6px; }
-    .channel { border: 1px solid #dbe7e1; border-radius: 7px; padding: 8px 10px; background: #fafcfb; }
-    .channel-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+    .channel { border: 1px solid #dbe7e1; border-radius: 7px; background: #fafcfb; padding: 0; overflow: hidden; }
+    .channel-summary { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; cursor: pointer; list-style: none; user-select: none; }
+    .channel-summary::-webkit-details-marker { display: none; }
+    .channel-summary h3 { margin: 0; font-size: 13px; font-weight: 700; flex: 1; display: flex; align-items: center; gap: 8px; }
+    .channel-summary h3::before { content: '+'; display: inline-block; width: 14px; height: 14px; line-height: 12px; text-align: center; border: 1px solid #1d6f54; border-radius: 3px; font-size: 12px; color: #1d6f54; font-family: monospace; font-weight: 800; }
+    .channel[open] .channel-summary h3::before { content: '−'; }
+    .channel[open] .channel-summary { border-bottom: 1px solid #edf3f0; }
+    .summary-val { font-size: 16px; font-weight: 800; color: #1d6f54; }
+    .channel-content { padding: 10px; }
+
+    .channel-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 10px; }
     .channel-head h3 { margin: 0; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
     .pump-badge { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
     .pump-badge.on { background: #dcf0e8; color: #1d6f54; }
@@ -731,25 +740,26 @@ foreach ($devices as $device) {
               $pumpOn = !empty($channel['pump_on']);
               $needsWater = !empty($channel['needs_water']);
             ?>
-            <section class="channel">
-              <div class="channel-head">
+            <details class="channel">
+              <summary class="channel-summary">
                 <h3><?= htmlspecialchars($displayName) ?></h3>
-                <span class="pump-badge <?= $pumpOn ? 'on' : ($needsWater ? 'needs' : 'off') ?>">
-                  <?= $pumpOn ? 'AN' : ($needsWater ? '~ Wasser' : 'AUS') ?>
-                </span>
-              </div>
+                <span class="summary-val"><?= (int) ($channel['moisture_percent'] ?? 0) ?>%</span>
+              </summary>
+              <div class="channel-content">
+                <div class="channel-head">
+                  <span class="pump-badge <?= $pumpOn ? 'on' : ($needsWater ? 'needs' : 'off') ?>">
+                    <?= $pumpOn ? 'AN' : ($needsWater ? '~ Wasser' : 'AUS') ?>
+                  </span>
+                  <p class="mode-line" style="margin:0">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></p>
+                </div>
 
-              <div class="ch-metrics">
-                <div class="ch-metric">
-                  <div class="lbl">Feuchtigkeit</div>
-                  <div class="val"><?= (int) ($channel['moisture_percent'] ?? 0) ?>%</div>
+                <div class="ch-metrics">
+                  <div class="ch-metric">
+                    <div class="lbl">Sensor raw</div>
+                    <div class="val"><?= (int) ($channel['soil_raw'] ?? 0) ?></div>
+                    <div class="sub">ADC12: <?= (int) ($channel['soil_raw12'] ?? 0) ?><br>Tr: <?= (int) ($channel['dry_raw'] ?? 0) ?> · Na: <?= (int) ($channel['wet_raw'] ?? 0) ?></div>
+                  </div>
                 </div>
-                <div class="ch-metric">
-                  <div class="lbl">Sensor raw</div>
-                  <div class="val"><?= (int) ($channel['soil_raw'] ?? 0) ?></div>
-                  <div class="sub">ADC12: <?= (int) ($channel['soil_raw12'] ?? 0) ?><br>Tr: <?= (int) ($channel['dry_raw'] ?? 0) ?> · Na: <?= (int) ($channel['wet_raw'] ?? 0) ?></div>
-                </div>
-              </div>
 
               <form method="post" class="pump-form">
                 <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
@@ -759,7 +769,6 @@ foreach ($devices as $device) {
                 <button class="btn-off" name="pump" value="off">Aus</button>
                 <button class="btn-auto" name="pump" value="auto">Auto</button>
               </form>
-              <p class="mode-line">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></p>
 
               <details class="ch-settings">
                 <summary>Einstellungen</summary>
@@ -825,7 +834,8 @@ foreach ($devices as $device) {
 
                 </div>
               </details>
-            </section>
+              </div>
+            </details>
           <?php endforeach; ?>
         </div>
         <p class="device-footer">
