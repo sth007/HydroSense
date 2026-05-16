@@ -348,7 +348,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pump'])) {
 // Handle GPIO config POST from dashboard for a specific channel
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_channel_gpio_config') {
     if (!hash_equals($apiKey, $dashboardKey)) {
-        $dashboardError = 'API key ist falsch.';
+        $msg = 'API key ist falsch.';
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            jsonResponse(['ok' => false, 'error' => $msg], 401);
+        }
+        $dashboardError = $msg;
     } else {
         $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
         $channelIndex = numberValue($_POST, 'channel_index');
@@ -384,7 +388,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $currentGpioConfig['relay_pins'] = $updatedRelayPinsStr;
         $currentGpioConfig['updated_at'] = gmdate('c');
         writeJsonFile(gpioConfigPath($dataDir, $deviceId), $currentGpioConfig);
-        // Redirect to refresh the page and show updated values, anchor to the device card
+
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            jsonResponse(['ok' => true, 'message' => 'GPIO Konfiguration gespeichert.']);
+        }
         header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved#device-' . urlencode($deviceId));
         exit;
     }
@@ -393,7 +400,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // Handle channel name config POST from dashboard
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_channel_name_config') {
     if (!hash_equals($apiKey, $dashboardKey)) {
-        $dashboardError = 'API key ist falsch.';
+        $msg = 'API key ist falsch.';
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            jsonResponse(['ok' => false, 'error' => $msg], 401);
+        }
+        $dashboardError = $msg;
     } else {
         $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
         $channelIndex = numberValue($_POST, 'channel_index');
@@ -420,6 +431,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $currentGpioConfig['updated_at'] = gmdate('c'); // Update timestamp
 
         writeJsonFile(gpioConfigPath($dataDir, $deviceId), $currentGpioConfig);
+
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            jsonResponse(['ok' => true, 'message' => 'Kanalname gespeichert.']);
+        }
         header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved#device-' . urlencode($deviceId));
         exit;
     }
@@ -428,7 +443,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // Handle channel calibration config POST from dashboard
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_channel_calibration_config') {
     if (!hash_equals($apiKey, $dashboardKey)) {
-        $dashboardError = 'API key ist falsch.';
+        $msg = 'API key ist falsch.';
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            jsonResponse(['ok' => false, 'error' => $msg], 401);
+        }
+        $dashboardError = $msg;
     } else {
         $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
         $channelIndex = numberValue($_POST, 'channel_index');
@@ -465,6 +484,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $currentGpioConfig['updated_at'] = gmdate('c'); // Update timestamp
 
         writeJsonFile(gpioConfigPath($dataDir, $deviceId), $currentGpioConfig);
+
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            jsonResponse(['ok' => true, 'message' => 'Kalibrierung gespeichert.']);
+        }
         header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved#device-' . urlencode($deviceId));
         exit;
     }
@@ -744,7 +767,7 @@ foreach ($devices as $device) {
 
                   <div class="settings-sec">
                     <h4>Kanalname</h4>
-                    <form method="post">
+                    <form method="post" class="ajax-settings-form">
                       <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
                       <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
                       <input type="hidden" name="action" value="save_channel_name_config">
@@ -758,7 +781,7 @@ foreach ($devices as $device) {
 
                   <div class="settings-sec">
                     <h4>Kalibrierung</h4>
-                    <form method="post" class="ajax-calibration-form">
+                    <form method="post" class="ajax-settings-form">
                       <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
                       <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
                       <input type="hidden" name="action" value="save_channel_calibration_config">
@@ -780,7 +803,7 @@ foreach ($devices as $device) {
 
                   <div class="settings-sec">
                     <h4>GPIO</h4>
-                    <form method="post">
+                    <form method="post" class="ajax-settings-form">
                       <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
                       <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
                       <input type="hidden" name="action" value="save_channel_gpio_config">
@@ -862,27 +885,37 @@ $(function() {
 
   initCharts();
 
-  // Handle calibration form submission via jQuery AJAX
-  $(document).on('submit', '.ajax-calibration-form', function(e) {
+  // Handle configuration forms via AJAX (Name, Calibration, GPIO)
+  $(document).on('submit', '.ajax-settings-form', function(e) {
     e.preventDefault();
     const $form = $(this);
     const formData = $form.serialize();
-    console.log('HydroSense: Calibration save initiated...', $form.serializeArray());
+    const action = $form.find('input[name="action"]').val();
+    
+    console.group('HydroSense: Settings Save');
+    console.log('[Time]', new Date().toLocaleTimeString());
+    console.log('[Action]', action);
+    console.log('[Payload]', $form.serializeArray().reduce((acc, item) => { acc[item.name] = item.value; return acc; }, {}));
 
     $.post(window.location.href, formData)
-      .done(function() {
-        console.log('HydroSense: Calibration save successful.');
-        // Visual feedback: trigger the success message UI
+      .done(function(res) {
+        console.log('[Response]', res);
+        console.log('Status: Success');
+        
+        const msgText = res.message || 'Einstellung gespeichert.';
         if ($('#successMsg').length === 0) {
-          $('<div class="success" id="successMsg">Kalibrierung gespeichert.</div>').insertAfter('.api-bar');
+          $('<div class="success" id="successMsg"></div>').text(msgText).insertAfter('.api-bar');
         } else {
-          $('#successMsg').text('Kalibrierung gespeichert.').show();
+          $('#successMsg').text(msgText).show();
         }
-        setTimeout(() => { $('#successMsg').fadeOut(400); }, 3000);
+        setTimeout(() => { $('#successMsg').fadeOut(400); }, 4000);
       })
       .fail(function(xhr) {
-        console.error('HydroSense: Calibration save failed:', xhr.status, xhr.statusText);
-      });
+        const error = xhr.responseJSON ? xhr.responseJSON.error : xhr.statusText;
+        console.error('Status: Error', xhr.status, error);
+        alert('Fehler beim Speichern: ' + error);
+      })
+      .always(() => { console.groupEnd(); });
   });
 
   let timeLeft = 15;
