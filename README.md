@@ -194,6 +194,14 @@ constexpr char DEVICE_ID[] = "hydrosense-esp32";
 
 Use the same `API_KEY` as `HYDROSENSE_API_KEY`. If you upload the PHP file to a web server, change `API_BASE_URL` to that public or local URL.
 
+Each ESP32/pump needs a unique `DEVICE_ID`. The dashboard automatically creates one card per device as soon as it receives telemetry from that ID. Device status is shown by color:
+
+| Color | Meaning |
+| --- | --- |
+| Green | telemetry received within 90 seconds |
+| Orange | last telemetry was within 15 minutes |
+| Red | no telemetry for more than 15 minutes |
+
 ### API endpoints
 
 Telemetry upload:
