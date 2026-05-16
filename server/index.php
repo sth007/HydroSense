@@ -194,6 +194,9 @@ function configPath(string $dataDir): string
     return $dataDir . '/config.json';
 }
 
+$globalConfig = readJsonFile(configPath($dataDir), []);
+$refreshInterval = (int) ($globalConfig['refresh_seconds'] ?? DASHBOARD_REFRESH_SECONDS);
+
 function deviceStatus(array $status): array
 {
     $lastSeen = isset($status['received_at']) ? strtotime((string) $status['received_at']) : 0;
