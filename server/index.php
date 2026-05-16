@@ -78,7 +78,7 @@ function requestJson(): array
 function textValue(array $payload, string $key, string $fallback = ''): string
 {
     $value = $payload[$key] ?? $fallback;
-    return preg_replace('/[^a-zA-Z0-9_.:-]/', '-', (string) $value) ?: $fallback;
+    return preg_replace('/[^a-zA-Z0-9_.,:-]/', '-', (string) $value) ?: $fallback;
 }
 
 function numberValue(array $payload, string $key): int
@@ -470,6 +470,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Handle device reset to defaults
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reset_device_settings') {
+    if (!hash_equals($apiKey, $dashboardKey)) {
+        $dashboardError = 'API key ist falsch.';
+    } else {
+        $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
+        $gpioFile = gpioConfigPath($dataDir, $deviceId);
+        $cmdFile = commandPath($dataDir, $deviceId);
+        
+        if (is_file($gpioFile)) @unlink($gpioFile);
+        if (is_file($cmdFile)) @unlink($cmdFile);
+        
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved');
+        exit;
+    }
+}
+
 $devices = loadDevices($dataDir);
 $deviceCount = count($devices);
 $onlineCount = 0;
@@ -557,6 +574,7 @@ foreach ($devices as $device) {
     .btn-auto { background: #5a7066; }
     .pump-form button:hover { opacity: 0.85; }
     .mode-line { font-size: 10px; color: #63736c; margin: 0 0 4px; }
+    .danger-zone { border-top: 1px solid #fee2e2; margin-top: 10px; padding-top: 8px; }
 
     /* Settings accordion */
     .ch-settings { border-top: 1px solid #edf3f0; margin-top: 4px; }
@@ -790,6 +808,16 @@ foreach ($devices as $device) {
         <p class="device-footer">
           Letzter Befehl: Kanal <?= (int) (($command['channel'] ?? 0) + 1) ?> · <?= htmlspecialchars($command['pump'] ?? 'keiner') ?><?= empty($command['acked_at']) ? '' : ' · bestätigt' ?>
         </p>
+        
+        <details class="ch-settings danger-zone">
+          <summary style="color: #a33b2b;">Geräte-Optionen</summary>
+          <form method="post" style="padding-top: 8px;" onsubmit="return confirm('Möchten Sie wirklich alle Einstellungen für dieses Gerät (Pins, Namen, Kalibrierung) auf die Standardwerte zurücksetzen?');">
+            <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
+            <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+            <input type="hidden" name="action" value="reset_device_settings">
+            <button type="submit" class="btn-off" style="width: 100%; border: 0; border-radius: 5px; padding: 8px; color: #fff; font-weight: 700; cursor: pointer;">Gerät auf Standardwerte zurücksetzen</button>
+          </form>
+        </details>
       </article>
     <?php endforeach; ?>
   </section>
