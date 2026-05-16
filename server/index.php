@@ -291,16 +291,13 @@ if ($api === 'gpio_config') {
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $payload = requestJson();
-        $soilSensorPins = textValue($payload, 'soil_sensor_pins', '');
-        $relayPins = textValue($payload, 'relay_pins', '');
-
-        writeJsonFile($path, [
-            'soil_sensor_pins' => $soilSensorPins,
-            'relay_pins' => $relayPins,
-            'dry_raw' => textValue($payload, 'dry_raw', ''),
-            'wet_raw' => textValue($payload, 'wet_raw', ''),
-            'updated_at' => gmdate('c'),
-        ]);
+        $config = readJsonFile($path, []);
+        $config['soil_sensor_pins'] = textValue($payload, 'soil_sensor_pins', $config['soil_sensor_pins'] ?? '34,35,36,39');
+        $config['relay_pins'] = textValue($payload, 'relay_pins', $config['relay_pins'] ?? '26,25,32,33');
+        $config['dry_raw'] = textValue($payload, 'dry_raw', $config['dry_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)));
+        $config['wet_raw'] = textValue($payload, 'wet_raw', $config['wet_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)));
+        $config['updated_at'] = gmdate('c');
+        writeJsonFile($path, $config);
         jsonResponse(['ok' => true, 'message' => 'GPIO configuration saved.']);
     } else { // GET request
         $config = readJsonFile($path, []);
@@ -359,13 +356,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $newPumpGpio = numberValue($_POST, 'pump_gpio');
 
         // Load current GPIO config
-        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
-            'soil_sensor_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)), // Default to 0 for all channels
-            'relay_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)),     // Default to 0 for all channels
-        ]);
+        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), []);
 
-        $soilPinsArray = explode(',', $currentGpioConfig['soil_sensor_pins']);
-        $relayPinsArray = explode(',', $currentGpioConfig['relay_pins']);
+        $soilPinsArray = explode(',', $currentGpioConfig['soil_sensor_pins'] ?? '34,35,36,39');
+        $relayPinsArray = explode(',', $currentGpioConfig['relay_pins'] ?? '26,25,32,33');
 
         // Ensure arrays are exactly PHP_CHANNEL_COUNT long
         $soilPinsArray = array_pad($soilPinsArray, PHP_CHANNEL_COUNT, '0');
@@ -386,13 +380,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $updatedSoilPinsStr = implode(',', $soilPinsArray);
         $updatedRelayPinsStr = implode(',', $relayPinsArray);
         
-        writeJsonFile(gpioConfigPath($dataDir, $deviceId), [
-            'soil_sensor_pins' => $updatedSoilPinsStr,
-            'relay_pins' => $updatedRelayPinsStr,
-            'updated_at' => gmdate('c'),
-        ]);
+        $currentGpioConfig['soil_sensor_pins'] = $updatedSoilPinsStr;
+        $currentGpioConfig['relay_pins'] = $updatedRelayPinsStr;
+        $currentGpioConfig['updated_at'] = gmdate('c');
+        writeJsonFile(gpioConfigPath($dataDir, $deviceId), $currentGpioConfig);
         // Redirect to refresh the page and show updated values, anchor to the device card
-        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '&msg=saved#device-' . urlencode($deviceId));
         exit;
     }
 }
@@ -407,13 +400,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $newChannelName = trim((string) ($_POST['channel_name'] ?? ''));
 
         // Load current GPIO config (which now includes channel_names)
-        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
-            'soil_sensor_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
-            'relay_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
-            'channel_names' => array_fill(0, PHP_CHANNEL_COUNT, ''),
-        ]);
+        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), []);
 
-        $channelNamesArray = $currentGpioConfig['channel_names'];
+        $channelNamesArray = $currentGpioConfig['channel_names'] ?? array_fill(0, PHP_CHANNEL_COUNT, '');
         // Ensure array is PHP_CHANNEL_COUNT long
         $channelNamesArray = array_pad($channelNamesArray, PHP_CHANNEL_COUNT, '');
 
@@ -447,16 +436,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $newWetRaw = numberValue($_POST, 'wet_raw_value');
 
         // Load current GPIO config (which now includes calibration values)
-        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
-            'soil_sensor_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
-            'relay_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
-            'channel_names' => array_fill(0, PHP_CHANNEL_COUNT, ''),
-            'dry_raw' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
-            'wet_raw' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
-        ]);
+        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), []);
 
-        $dryRawArray = explode(',', $currentGpioConfig['dry_raw']);
-        $wetRawArray = explode(',', $currentGpioConfig['wet_raw']);
+        $dryRawArray = explode(',', $currentGpioConfig['dry_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')));
+        $wetRawArray = explode(',', $currentGpioConfig['wet_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')));
 
         // Ensure arrays are PHP_CHANNEL_COUNT long
         $dryRawArray = array_pad($dryRawArray, PHP_CHANNEL_COUNT, '0');
@@ -587,13 +570,15 @@ foreach ($devices as $device) {
         $channels = normalizeChannels($device);
         $history = loadHistory(historyPath($dataDir, $deviceId));
         $command = readJsonFile(commandPath($dataDir, $deviceId), []);
-        $gpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
-            'soil_sensor_pins' => '34,35,36,39', // Default from src/main.cpp
-            'relay_pins' => '26,25,32,33',     // Default from src/main.cpp
-            'dry_raw' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)),
-            'wet_raw' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)),
-            'channel_names' => array_fill(0, PHP_CHANNEL_COUNT, ''),
-        ]);
+        $gpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), []);
+        
+        // Ensure all keys exist for UI rendering
+        $gpioConfig['soil_sensor_pins'] = $gpioConfig['soil_sensor_pins'] ?? '34,35,36,39';
+        $gpioConfig['relay_pins'] = $gpioConfig['relay_pins'] ?? '26,25,32,33';
+        $gpioConfig['dry_raw'] = $gpioConfig['dry_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0'));
+        $gpioConfig['wet_raw'] = $gpioConfig['wet_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0'));
+        $gpioConfig['channel_names'] = $gpioConfig['channel_names'] ?? array_fill(0, PHP_CHANNEL_COUNT, '');
+
         $channelNamesArray = $gpioConfig['channel_names'] ?? array_fill(0, PHP_CHANNEL_COUNT, '');
         $channelNamesArray = array_pad($channelNamesArray, PHP_CHANNEL_COUNT, '');
 
