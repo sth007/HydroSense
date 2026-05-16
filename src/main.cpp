@@ -3,6 +3,7 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 
 // HydroSense multi-channel controller.
 // One ESP32 controls 4 humidity sensors and 4 pump relays/MOSFET channels.
@@ -539,9 +540,21 @@ void stopConfigApIfConnected() {
 }
 
 bool httpPostJson(const String &url, const String &body, String *response = nullptr) {
-  WiFiClient client;
+  std::unique_ptr<WiFiClient> client;
+  if (url.startsWith("https")) {
+    auto s = new WiFiClientSecure();
+    s->setInsecure();
+    client.reset(s);
+  } else {
+    client.reset(new WiFiClient());
+  }
+
   HTTPClient http;
-  if (!http.begin(client, url)) {
+  Serial.print(F("HTTP POST: "));
+  Serial.println(url);
+
+  if (!http.begin(*client, url)) {
+    Serial.println(F("HTTP begin failed (check URL)"));
     return false;
   }
 
@@ -550,6 +563,11 @@ bool httpPostJson(const String &url, const String &body, String *response = null
   const int status = http.POST(body);
   if (response != nullptr) {
     *response = http.getString();
+  }
+  if (status < 200 || status >= 300) {
+    Serial.printf("POST failed. Status: %d\n", status);
+    if (status < 0) Serial.printf("Error: %s\n", http.errorToString(status).c_str());
+    if (response) Serial.printf("Response: %s\n", response->c_str());
   }
   http.end();
   return status >= 200 && status < 300;
@@ -672,24 +690,41 @@ void acknowledgeCommand(uint32_t commandId) {
 void pollCommand() {
   connectWifi();
   if (WiFi.status() != WL_CONNECTED || apiBaseUrl.length() == 0) {
+    if (apiBaseUrl.length() == 0) Serial.println(F("Poll skipped: No API URL configured"));
     return;
   }
 
-  WiFiClient client;
-  HTTPClient http;
   String url = apiBaseUrl + "?api=command&device_id=" + DEVICE_ID;
-  if (!http.begin(client, url)) {
+  std::unique_ptr<WiFiClient> client;
+  if (url.startsWith("https")) {
+    auto s = new WiFiClientSecure();
+    s->setInsecure();
+    client.reset(s);
+  } else {
+    client.reset(new WiFiClient());
+  }
+
+  HTTPClient http;
+  Serial.print(F("HTTP GET: ")); 
+  Serial.println(url);
+
+  if (!http.begin(*client, url)) {
+    Serial.println(F("HTTP begin failed (check URL)"));
     return;
   }
+
   http.addHeader("X-Api-Key", apiKey);
   const int status = http.GET();
   const String response = http.getString();
-  http.end();
 
   if (status < 200 || status >= 300) {
-    Serial.println(F("Command poll failed"));
+    Serial.printf("Command poll failed. Status: %d\n", status);
+    if (status < 0) Serial.printf("Error: %s\n", http.errorToString(status).c_str());
+    Serial.printf("Server Response: %s\n", response.c_str());
+    http.end();
     return;
   }
+  http.end();
 
   const uint32_t commandId = extractJsonUint(response, "command_id");
   const String command = extractJsonString(response, "pump");
