@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
+#include <WebServer.h>
 #include <WiFi.h>
 
 // HydroSense multi-channel controller.
@@ -40,12 +42,10 @@ constexpr unsigned long MAX_PUMP_RUN_MS = 15000;
 constexpr unsigned long PUMP_COOLDOWN_MS = 30000;
 constexpr uint8_t ADC_DUMMY_READS = 4;
 
-// Fill these in before uploading if you want server sync.
-constexpr bool WIFI_ENABLED = false;
-constexpr char WIFI_SSID[] = "YOUR_WIFI_SSID";
-constexpr char WIFI_PASSWORD[] = "YOUR_WIFI_PASSWORD";
-constexpr char API_BASE_URL[] = "http://192.168.1.10/hydrosense/server/index.php";
-constexpr char API_KEY[] = "change-me";
+constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 30000;
+constexpr char CONFIG_AP_PASSWORD[] = "hydrosense";
+constexpr char DEFAULT_API_BASE_URL[] = "";
+constexpr char DEFAULT_API_KEY[] = "change-me";
 constexpr char DEVICE_ID[] = "hydrosense-esp32";
 
 enum class PumpMode : uint8_t {
@@ -73,6 +73,18 @@ int lastBatteryAdcRaw = 0;
 uint16_t lastBatteryPinMilliVolts = 0;
 uint16_t batteryMilliVolts = 0;
 int batteryPercent = 0;
+unsigned long lastWifiAttemptMs = 0;
+bool configApActive = false;
+String wifiSsid;
+String wifiPassword;
+String apiBaseUrl;
+String apiKey;
+String configApSsid;
+Preferences preferences;
+WebServer configServer(80);
+
+void connectWifi();
+void startConfigAp();
 
 const char *pumpModeValue(PumpMode mode) {
   switch (mode) {
@@ -343,6 +355,182 @@ String buildTelemetryJson() {
   return json;
 }
 
+String htmlEscape(const String &value) {
+  String escaped;
+  escaped.reserve(value.length());
+  for (size_t i = 0; i < value.length(); ++i) {
+    const char c = value[i];
+    if (c == '&') {
+      escaped += F("&amp;");
+    } else if (c == '<') {
+      escaped += F("&lt;");
+    } else if (c == '>') {
+      escaped += F("&gt;");
+    } else if (c == '"') {
+      escaped += F("&quot;");
+    } else {
+      escaped += c;
+    }
+  }
+  return escaped;
+}
+
+String wifiStatusText() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return String("connected: ") + WiFi.localIP().toString();
+  }
+  if (wifiSsid.length() == 0) {
+    return "not configured";
+  }
+  return "not connected";
+}
+
+String configPageHtml(const String &message = "") {
+  String html = F("<!doctype html><html><head><meta charset='utf-8'>"
+                  "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                  "<title>HydroSense WiFi</title><style>"
+                  "body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;background:#f4f7f6;color:#17211d}"
+                  "main{max-width:560px;margin:0 auto;padding:28px 16px}"
+                  ".card{background:#fff;border:1px solid #d9e4df;border-radius:8px;padding:18px;box-shadow:0 1px 2px #0001}"
+                  "h1{margin:0 0 14px;font-size:30px}.muted{color:#63736c}.msg{font-weight:700;color:#1d6f54}"
+                  "label{display:block;font-weight:700;margin-top:14px}input{box-sizing:border-box;width:100%;padding:11px;border:1px solid #c6d5ce;border-radius:6px;font:inherit}"
+                  "button,a.btn{display:inline-block;margin-top:16px;border:0;border-radius:6px;padding:11px 14px;background:#1d6f54;color:#fff;font:inherit;font-weight:700;text-decoration:none}"
+                  "a.btn.secondary{background:#40534b;margin-left:8px}.kv{display:grid;grid-template-columns:130px 1fr;gap:8px;margin:14px 0}"
+                  "</style></head><body><main><div class='card'><h1>HydroSense WiFi</h1>");
+
+  if (message.length() > 0) {
+    html += F("<p class='msg'>");
+    html += htmlEscape(message);
+    html += F("</p>");
+  }
+
+  html += F("<div class='kv'><div class='muted'>Status</div><div>");
+  html += htmlEscape(wifiStatusText());
+  html += F("</div><div class='muted'>Device</div><div>");
+  html += DEVICE_ID;
+  html += F("</div><div class='muted'>API</div><div>");
+  html += apiBaseUrl.length() > 0 ? htmlEscape(apiBaseUrl) : String("not configured");
+  html += F("</div><div class='muted'>API key</div><div>");
+  html += apiKey.length() > 0 ? String("configured") : String("not configured");
+  html += F("</div><div class='muted'>Hotspot</div><div>");
+  html += configApActive ? htmlEscape(configApSsid) : String("off");
+  html += F("</div></div><form method='post' action='/save'>"
+            "<label for='ssid'>WiFi SSID</label><input id='ssid' name='ssid' value='");
+  html += htmlEscape(wifiSsid);
+  html += F("' autocomplete='off'><label for='password'>WiFi Password</label>"
+            "<input id='password' name='password' type='password' value='' autocomplete='new-password'>"
+            "<label for='api'>Server API URL</label><input id='api' name='api' value='");
+  html += htmlEscape(apiBaseUrl);
+  html += F("' autocomplete='off' placeholder='http://server-ip:8077/index.php'>"
+            "<label for='key'>Server API Key</label><input id='key' name='key' value='");
+  html += htmlEscape(apiKey);
+  html += F("' autocomplete='off'>"
+            "<button type='submit'>Save and connect</button></form>"
+            "<a class='btn secondary' href='/'>Refresh</a><a class='btn secondary' href='/clear'>Clear WiFi</a>"
+            "<p class='muted'>If WiFi is not connected, join the HydroSense hotspot and open http://192.168.4.1/.</p>"
+            "</div></main></body></html>");
+  return html;
+}
+
+void loadConfig() {
+  preferences.begin("hydrosense", false);
+  wifiSsid = preferences.isKey("wifi_ssid") ? preferences.getString("wifi_ssid", "") : "";
+  wifiPassword = preferences.isKey("wifi_pass") ? preferences.getString("wifi_pass", "") : "";
+  apiBaseUrl = preferences.isKey("api_url") ? preferences.getString("api_url", DEFAULT_API_BASE_URL) : DEFAULT_API_BASE_URL;
+  apiKey = preferences.isKey("api_key") ? preferences.getString("api_key", DEFAULT_API_KEY) : DEFAULT_API_KEY;
+}
+
+void saveConfig(const String &ssid, const String &password, const String &apiUrl, const String &key) {
+  wifiSsid = ssid;
+  wifiPassword = password;
+  apiBaseUrl = apiUrl;
+  apiKey = key;
+  preferences.putString("wifi_ssid", wifiSsid);
+  preferences.putString("wifi_pass", wifiPassword);
+  preferences.putString("api_url", apiBaseUrl);
+  preferences.putString("api_key", apiKey);
+}
+
+void clearConfig() {
+  wifiSsid = "";
+  wifiPassword = "";
+  apiBaseUrl = DEFAULT_API_BASE_URL;
+  apiKey = DEFAULT_API_KEY;
+  preferences.remove("wifi_ssid");
+  preferences.remove("wifi_pass");
+  preferences.remove("api_url");
+  preferences.remove("api_key");
+}
+
+void setupConfigServer() {
+  configServer.on("/", HTTP_GET, []() {
+    configServer.send(200, "text/html", configPageHtml());
+  });
+
+  configServer.on("/save", HTTP_POST, []() {
+    const String ssid = configServer.arg("ssid");
+    const String password = configServer.arg("password");
+    const String apiUrl = configServer.arg("api");
+    const String key = configServer.arg("key");
+    if (ssid.length() == 0) {
+      configServer.send(400, "text/html", configPageHtml("SSID is required."));
+      return;
+    }
+
+    saveConfig(ssid, password, apiUrl, key);
+    WiFi.disconnect(false, false);
+    lastWifiAttemptMs = 0;
+    connectWifi();
+    configServer.send(200, "text/html", configPageHtml("Settings saved. Connecting..."));
+  });
+
+  configServer.on("/clear", HTTP_GET, []() {
+    clearConfig();
+    WiFi.disconnect(false, false);
+    startConfigAp();
+    configServer.send(200, "text/html", configPageHtml("Settings cleared."));
+  });
+
+  configServer.onNotFound([]() {
+    configServer.send(404, "text/plain", "Not found");
+  });
+
+  configServer.begin();
+}
+
+void startConfigAp() {
+  if (configApActive) {
+    return;
+  }
+
+  uint64_t mac = ESP.getEfuseMac();
+  char suffix[7] = {};
+  snprintf(suffix, sizeof(suffix), "%06X", static_cast<unsigned int>(mac & 0xFFFFFF));
+  configApSsid = String("HydroSense-") + suffix;
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(configApSsid.c_str(), CONFIG_AP_PASSWORD);
+  configApActive = true;
+
+  Serial.print(F("Config hotspot started: "));
+  Serial.print(configApSsid);
+  Serial.print(F(" password="));
+  Serial.print(CONFIG_AP_PASSWORD);
+  Serial.print(F(" ip="));
+  Serial.println(WiFi.softAPIP());
+}
+
+void stopConfigApIfConnected() {
+  if (!configApActive || WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  WiFi.softAPdisconnect(true);
+  configApActive = false;
+  WiFi.mode(WIFI_STA);
+  Serial.println(F("Config hotspot stopped"));
+}
+
 bool httpPostJson(const String &url, const String &body, String *response = nullptr) {
   WiFiClient client;
   HTTPClient http;
@@ -351,7 +539,7 @@ bool httpPostJson(const String &url, const String &body, String *response = null
   }
 
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Api-Key", API_KEY);
+  http.addHeader("X-Api-Key", apiKey);
   const int status = http.POST(body);
   if (response != nullptr) {
     *response = http.getString();
@@ -401,12 +589,25 @@ int extractJsonInt(const String &json, const char *key, int fallback) {
 }
 
 void connectWifi() {
-  if (!WIFI_ENABLED || WiFi.status() == WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED) {
+    stopConfigApIfConnected();
     return;
   }
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  if (wifiSsid.length() == 0) {
+    startConfigAp();
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (lastWifiAttemptMs != 0 && now - lastWifiAttemptMs < WIFI_RECONNECT_INTERVAL_MS) {
+    startConfigAp();
+    return;
+  }
+  lastWifiAttemptMs = now;
+
+  WiFi.mode(configApActive ? WIFI_AP_STA : WIFI_STA);
+  WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
   Serial.print(F("WiFi connecting"));
 
   const unsigned long startMs = millis();
@@ -419,21 +620,20 @@ void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print(F("WiFi connected: "));
     Serial.println(WiFi.localIP());
+    stopConfigApIfConnected();
   } else {
     Serial.println(F("WiFi connection failed"));
+    startConfigAp();
   }
 }
 
 void postTelemetry() {
-  if (!WIFI_ENABLED) {
-    return;
-  }
   connectWifi();
-  if (WiFi.status() != WL_CONNECTED) {
+  if (WiFi.status() != WL_CONNECTED || apiBaseUrl.length() == 0) {
     return;
   }
 
-  const String url = String(API_BASE_URL) + "?api=telemetry";
+  const String url = apiBaseUrl + "?api=telemetry";
   if (!httpPostJson(url, buildTelemetryJson())) {
     Serial.println(F("Telemetry post failed"));
   }
@@ -458,25 +658,24 @@ void acknowledgeCommand(uint32_t commandId) {
     body += "\"}";
   }
   body += "]}";
-  httpPostJson(String(API_BASE_URL) + "?api=ack", body);
+  if (apiBaseUrl.length() > 0) {
+    httpPostJson(apiBaseUrl + "?api=ack", body);
+  }
 }
 
 void pollCommand() {
-  if (!WIFI_ENABLED) {
-    return;
-  }
   connectWifi();
-  if (WiFi.status() != WL_CONNECTED) {
+  if (WiFi.status() != WL_CONNECTED || apiBaseUrl.length() == 0) {
     return;
   }
 
   WiFiClient client;
   HTTPClient http;
-  String url = String(API_BASE_URL) + "?api=command&device_id=" + DEVICE_ID;
+  String url = apiBaseUrl + "?api=command&device_id=" + DEVICE_ID;
   if (!http.begin(client, url)) {
     return;
   }
-  http.addHeader("X-Api-Key", API_KEY);
+  http.addHeader("X-Api-Key", apiKey);
   const int status = http.GET();
   const String response = http.getString();
   http.end();
@@ -518,9 +717,12 @@ void setup() {
   }
   initPumpsOff();
 
+  loadConfig();
+  connectWifi();
+  setupConfigServer();
+
   readAllSensors();
   printStatus();
-  connectWifi();
 
   Serial.println(F("HydroSense ESP32 multi-channel controller started"));
   Serial.println(F("Configure SOIL_SENSOR_PINS and RELAY_PINS for your board before upload."));
@@ -528,6 +730,13 @@ void setup() {
 
 void loop() {
   const unsigned long now = millis();
+  configServer.handleClient();
+
+  if (WiFi.status() != WL_CONNECTED && now - lastWifiAttemptMs >= WIFI_RECONNECT_INTERVAL_MS) {
+    connectWifi();
+  } else if (WiFi.status() == WL_CONNECTED) {
+    stopConfigApIfConnected();
+  }
 
   updatePumpAutomation(now);
 

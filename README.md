@@ -17,7 +17,7 @@ git checkout main
 Start the local PHP dashboard/API server:
 
 ```sh
-HYDROSENSE_API_KEY=change-me php -S 127.0.0.1:8077 -t server
+HYDROSENSE_API_KEY=change-me php -S 0.0.0.0:8077 -t server
 ```
 
 Open the dashboard:
@@ -26,30 +26,39 @@ Open the dashboard:
 http://127.0.0.1:8077/
 ```
 
-Use the server URL in the ESP32 firmware:
+Use the server URL and API key on the ESP32 configuration page:
 
-```cpp
-constexpr char API_BASE_URL[] = "http://YOUR_SERVER_IP:8077/index.php";
-constexpr char API_KEY[] = "change-me";
-constexpr char DEVICE_ID[] = "hydrosense-esp32";
+```text
+http://YOUR_SERVER_IP:8077/index.php
+API key: change-me
 ```
 
-Use the same value for `API_KEY` and `HYDROSENSE_API_KEY`. Use a different `DEVICE_ID` for each ESP32/pump. The dashboard automatically adds every device that sends telemetry.
+`YOUR_SERVER_IP` must be the LAN IP of the computer/server running PHP, not `127.0.0.1`. Use the same value for the ESP32 API key and `HYDROSENSE_API_KEY`. Use a different `DEVICE_ID` for each ESP32/pump. The dashboard automatically adds every device that sends telemetry.
+
+WiFi is configured on the ESP32 itself. If it cannot connect, it opens a hotspot:
+
+```text
+SSID: HydroSense-XXXXXX
+Password: hydrosense
+URL: http://192.168.4.1/
+```
+
+After WiFi is connected, the same configuration page is reachable at the ESP32 IP shown in Serial Monitor. Enter the API URL and API key there too. If the API URL is empty, the ESP32 keeps reading sensors and controlling relays but skips server sync.
 
 ## Wiring
 
 ### Humidity Sensors
 
-The firmware supports 4 analog humidity sensors. The default ESP32-C3 ADC pins are:
+The firmware supports 4 analog humidity sensors. The default ESP32 ADC pins are:
 
-| Channel | Sensor analog output | Default ESP32-C3 pin |
+| Channel | Sensor analog output | Default ESP32 pin |
 | --- | --- | --- |
 | 1 | AOUT / yellow | GPIO34 |
 | 2 | AOUT / yellow | GPIO35 |
 | 3 | AOUT / yellow | GPIO36 |
 | 4 | AOUT / yellow | GPIO39 |
 
-Power the sensors from `3V3` and connect all sensor grounds to ESP32 `GND`. Do not power analog sensors from 5 V when their output is connected directly to an ESP32-C3 GPIO. ESP32-C3 ADC pins are not 5 V tolerant.
+Power the sensors from `3V3` and connect all sensor grounds to ESP32 `GND`. Do not power analog sensors from 5 V when their output is connected directly to an ESP32 GPIO. ESP32 ADC pins are not 5 V tolerant.
 
 ### Battery measurement
 
