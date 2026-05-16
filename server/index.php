@@ -511,7 +511,11 @@ foreach ($devices as $device) {
         $gpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
             'soil_sensor_pins' => '34,35,36,39', // Default from src/main.cpp
             'relay_pins' => '26,25,32,33',     // Default from src/main.cpp
+            'channel_names' => array_fill(0, PHP_CHANNEL_COUNT, ''),
         ]);
+        $channelNamesArray = $gpioConfig['channel_names'] ?? array_fill(0, PHP_CHANNEL_COUNT, '');
+        $channelNamesArray = array_pad($channelNamesArray, PHP_CHANNEL_COUNT, '');
+
         $soilPinsArray = explode(',', $gpioConfig['soil_sensor_pins']);
         $relayPinsArray = explode(',', $gpioConfig['relay_pins']);
         $soilPinsArray = array_pad($soilPinsArray, PHP_CHANNEL_COUNT, '0');
@@ -547,10 +551,13 @@ foreach ($devices as $device) {
 
         <div class="channel-grid">
           <?php foreach ($channels as $channel): ?>
-            <?php $channelIndex = (int) ($channel['index'] ?? 0); ?>
+            <?php 
+              $channelIndex = (int) ($channel['index'] ?? 0);
+              $displayName = !empty($channelNamesArray[$channelIndex]) ? $channelNamesArray[$channelIndex] : ($channel['name'] ?? ('Pump ' . ($channelIndex + 1)));
+            ?>
             <section class="channel">
               <div class="channel-head">
-                <h3><?= htmlspecialchars($channel['name'] ?? ('Pump ' . ($channelIndex + 1))) ?></h3>
+                <h3><?= htmlspecialchars($displayName) ?></h3>
                 <strong><?= !empty($channel['pump_on']) ? 'AN' : 'AUS' ?></strong>
               </div>
               <div class="metrics">
@@ -575,6 +582,20 @@ foreach ($devices as $device) {
                 </div>
               </form>
               <p class="muted">Modus: <?= htmlspecialchars($channel['pump_mode'] ?? 'auto') ?></p>
+
+              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+              <section class="name-config">
+                <form method="post">
+                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                  <input type="hidden" name="action" value="save_channel_name_config">
+                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
+                  <label for="channel_name_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Kanalname bearbeiten</label>
+                  <input id="channel_name_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="channel_name" type="text" value="<?= htmlspecialchars($channelNamesArray[$channelIndex] ?? '') ?>" placeholder="z.B. Tomaten">
+                  <button type="submit">Name speichern</button>
+                </form>
+              </section>
 
               <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
 
