@@ -4,40 +4,14 @@ PlatformIO/Arduino project for an ESP32-C3 SuperMini that reads a Grove - Moistu
 
 ## Quick Installation
 
-Clone the repository from GitHub:
+Install only the PHP server/dashboard directory:
 
 ```sh
-git clone https://github.com/sth007/HydroSense.git
-cd HydroSense
-```
-
-Install PlatformIO if it is not already available:
-
-```sh
-python3 -m pip install platformio
-```
-
-Build the firmware:
-
-```sh
-pio run
-```
-
-Configure WiFi and server settings in `src/main.cpp`:
-
-```cpp
-constexpr bool WIFI_ENABLED = true;
-constexpr char WIFI_SSID[] = "YOUR_WIFI_SSID";
-constexpr char WIFI_PASSWORD[] = "YOUR_WIFI_PASSWORD";
-constexpr char API_BASE_URL[] = "http://YOUR_SERVER_IP:8077/index.php";
-constexpr char API_KEY[] = "change-me";
-constexpr char DEVICE_ID[] = "hydrosense-esp32";
-```
-
-Upload to the ESP32-C3:
-
-```sh
-pio run -t upload
+git clone --filter=blob:none --no-checkout https://github.com/sth007/HydroSense.git hydrosense-server
+cd hydrosense-server
+git sparse-checkout init --cone
+git sparse-checkout set server
+git checkout main
 ```
 
 Start the local PHP dashboard/API server:
@@ -52,7 +26,15 @@ Open the dashboard:
 http://127.0.0.1:8077/
 ```
 
-Use a different `DEVICE_ID` for each ESP32/pump. The dashboard automatically adds every device that sends telemetry.
+Use the server URL in the ESP32 firmware:
+
+```cpp
+constexpr char API_BASE_URL[] = "http://YOUR_SERVER_IP:8077/index.php";
+constexpr char API_KEY[] = "change-me";
+constexpr char DEVICE_ID[] = "hydrosense-esp32";
+```
+
+Use the same value for `API_KEY` and `HYDROSENSE_API_KEY`. Use a different `DEVICE_ID` for each ESP32/pump. The dashboard automatically adds every device that sends telemetry.
 
 ## Wiring
 
