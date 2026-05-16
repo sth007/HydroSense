@@ -848,11 +848,16 @@ foreach ($devices as $device) {
 
 <script>
 $(function() {
-  function syncApiKey() {
-    const v = $('#globalApiKey').val();
+  function syncApiKey(val) {
+    const v = val !== undefined ? val : $('#globalApiKey').val();
     $('input[name="api_key"]').val(v);
   }
-  $('#globalApiKey').on('input', syncApiKey);
+
+  $('#globalApiKey').on('input change blur', function() {
+    syncApiKey($(this).val());
+  });
+
+  syncApiKey(); // Initialer Sync beim Laden
 
   function initCharts() {
     $('.history-canvas').each(function() {
@@ -889,6 +894,11 @@ $(function() {
   $(document).on('submit', '.ajax-settings-form', function(e) {
     e.preventDefault();
     const $form = $(this);
+    
+    // Vor dem Absenden sicherstellen, dass der Key aus dem globalen Feld übernommen wird
+    const masterKey = $('#globalApiKey').val();
+    $form.find('input[name="api_key"]').val(masterKey);
+
     const formData = $form.serialize();
     const action = $form.find('input[name="action"]').val();
     
