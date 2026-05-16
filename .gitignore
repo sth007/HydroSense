@@ -6,3 +6,6 @@ sdkconfig.esp32-c6-devkitc-1
 .vscode/launch.json
 .vscode/ipch/
 server/.env
+server/skills/*
+server/agent/*
+server/CLAUDE.md
