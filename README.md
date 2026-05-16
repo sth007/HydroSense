@@ -2,6 +2,58 @@
 
 PlatformIO/Arduino project for an ESP32-C3 SuperMini that reads a Grove - Moisture Sensor V1.4, shows status on a 4.2" WeAct Studio ePaper, and controls a 3-5 V mini water pump through a 1-channel 5 V relay module.
 
+## Quick Installation
+
+Clone the repository from GitHub:
+
+```sh
+git clone https://github.com/YOUR_GITHUB_USER/HydroSense.git
+cd HydroSense
+```
+
+Install PlatformIO if it is not already available:
+
+```sh
+python3 -m pip install platformio
+```
+
+Build the firmware:
+
+```sh
+pio run
+```
+
+Configure WiFi and server settings in `src/main.cpp`:
+
+```cpp
+constexpr bool WIFI_ENABLED = true;
+constexpr char WIFI_SSID[] = "YOUR_WIFI_SSID";
+constexpr char WIFI_PASSWORD[] = "YOUR_WIFI_PASSWORD";
+constexpr char API_BASE_URL[] = "http://YOUR_SERVER_IP:8077/index.php";
+constexpr char API_KEY[] = "change-me";
+constexpr char DEVICE_ID[] = "hydrosense-esp32";
+```
+
+Upload to the ESP32-C3:
+
+```sh
+pio run -t upload
+```
+
+Start the local PHP dashboard/API server:
+
+```sh
+HYDROSENSE_API_KEY=change-me php -S 127.0.0.1:8077 -t server
+```
+
+Open the dashboard:
+
+```text
+http://127.0.0.1:8077/
+```
+
+Use a different `DEVICE_ID` for each ESP32/pump. The dashboard automatically adds every device that sends telemetry.
+
 ## Wiring
 
 ### Grove - Moisture Sensor V1.4
