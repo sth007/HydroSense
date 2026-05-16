@@ -99,6 +99,8 @@ function normalizeChannels(array $payload): array
             if (!is_array($channel)) {
                 continue;
             }
+            // Add dry_raw and wet_raw from telemetry
+            // These are sent by the ESP32 in buildTelemetryJson
             $channels[] = [
                 'index' => (int) ($channel['index'] ?? $index),
                 'name' => trim((string) ($channel['name'] ?? '')) ?: 'Pump ' . (((int) ($channel['index'] ?? $index)) + 1),
@@ -106,6 +108,8 @@ function normalizeChannels(array $payload): array
                 'soil_raw' => numberValue($channel, 'soil_raw'),
                 'soil_raw12' => numberValue($channel, 'soil_raw12'),
                 'pump_on' => boolValue($channel, 'pump_on'),
+                'dry_raw' => numberValue($channel, 'dry_raw'),
+                'wet_raw' => numberValue($channel, 'wet_raw'),
                 'pump_mode' => textValue($channel, 'pump_mode', 'auto'),
                 'needs_water' => boolValue($channel, 'needs_water'),
             ];
@@ -122,6 +126,8 @@ function normalizeChannels(array $payload): array
         'moisture_percent' => numberValue($payload, 'moisture_percent'),
         'soil_raw' => numberValue($payload, 'soil_raw'),
         'soil_raw12' => numberValue($payload, 'soil_raw12'),
+        'dry_raw' => 0, // Default if not in telemetry
+        'wet_raw' => 0, // Default if not in telemetry
         'pump_on' => boolValue($payload, 'pump_on'),
         'pump_mode' => textValue($payload, 'pump_mode', 'auto'),
         'needs_water' => boolValue($payload, 'needs_water'),
@@ -291,6 +297,8 @@ if ($api === 'gpio_config') {
         writeJsonFile($path, [
             'soil_sensor_pins' => $soilSensorPins,
             'relay_pins' => $relayPins,
+            'dry_raw' => textValue($payload, 'dry_raw', ''),
+            'wet_raw' => textValue($payload, 'wet_raw', ''),
             'updated_at' => gmdate('c'),
         ]);
         jsonResponse(['ok' => true, 'message' => 'GPIO configuration saved.']);
@@ -301,6 +309,8 @@ if ($api === 'gpio_config') {
             // Provide defaults if not found in file (matching src/main.cpp defaults)
             'soil_sensor_pins' => $config['soil_sensor_pins'] ?? '34,35,36,39',
             'relay_pins' => $config['relay_pins'] ?? '26,25,32,33',
+            'dry_raw' => $config['dry_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)),
+            'wet_raw' => $config['wet_raw'] ?? implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)),
             'channel_names' => $config['channel_names'] ?? array_fill(0, PHP_CHANNEL_COUNT, ''),
         ]);
     }
@@ -418,6 +428,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Handle channel calibration config POST from dashboard
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_channel_calibration_config') {
+    if (!hash_equals($apiKey, $dashboardKey)) {
+        $dashboardError = 'API key ist falsch.';
+    } else {
+        $deviceId = textValue($_POST, 'device_id', 'hydrosense-esp32');
+        $channelIndex = numberValue($_POST, 'channel_index');
+        $newDryRaw = numberValue($_POST, 'dry_raw_value');
+        $newWetRaw = numberValue($_POST, 'wet_raw_value');
+
+        // Load current GPIO config (which now includes calibration values)
+        $currentGpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
+            'soil_sensor_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
+            'relay_pins' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
+            'channel_names' => array_fill(0, PHP_CHANNEL_COUNT, ''),
+            'dry_raw' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
+            'wet_raw' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, '0')),
+        ]);
+
+        $dryRawArray = explode(',', $currentGpioConfig['dry_raw']);
+        $wetRawArray = explode(',', $currentGpioConfig['wet_raw']);
+
+        // Ensure arrays are PHP_CHANNEL_COUNT long
+        $dryRawArray = array_pad($dryRawArray, PHP_CHANNEL_COUNT, '0');
+        $wetRawArray = array_pad($wetRawArray, PHP_CHANNEL_COUNT, '0');
+
+        // Update the specific channel's calibration values
+        if ($channelIndex >= 0 && $channelIndex < PHP_CHANNEL_COUNT) {
+            $dryRawArray[$channelIndex] = (string)$newDryRaw;
+            $wetRawArray[$channelIndex] = (string)$newWetRaw;
+        } else {
+            $dashboardError = 'Ungültiger Kanalindex für Kalibrierungs-Konfiguration.';
+            header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+            exit;
+        }
+
+        // Reconstruct comma-separated strings
+        $updatedDryRawStr = implode(',', $dryRawArray);
+        $updatedWetRawStr = implode(',', $wetRawArray);
+
+        // Update the gpioConfig with the new calibration values
+        $currentGpioConfig['dry_raw'] = $updatedDryRawStr;
+        $currentGpioConfig['wet_raw'] = $updatedWetRawStr;
+        $currentGpioConfig['updated_at'] = gmdate('c'); // Update timestamp
+
+        writeJsonFile(gpioConfigPath($dataDir, $deviceId), $currentGpioConfig);
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?') . '?api_key=' . rawurlencode($dashboardKey) . '#device-' . urlencode($deviceId));
+        exit;
+    }
+}
+
 $devices = loadDevices($dataDir);
 $deviceCount = count($devices);
 $onlineCount = 0;
@@ -511,6 +572,8 @@ foreach ($devices as $device) {
         $gpioConfig = readJsonFile(gpioConfigPath($dataDir, $deviceId), [
             'soil_sensor_pins' => '34,35,36,39', // Default from src/main.cpp
             'relay_pins' => '26,25,32,33',     // Default from src/main.cpp
+            'dry_raw' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)),
+            'wet_raw' => implode(',', array_fill(0, PHP_CHANNEL_COUNT, 0)),
             'channel_names' => array_fill(0, PHP_CHANNEL_COUNT, ''),
         ]);
         $channelNamesArray = $gpioConfig['channel_names'] ?? array_fill(0, PHP_CHANNEL_COUNT, '');
@@ -518,6 +581,8 @@ foreach ($devices as $device) {
 
         $soilPinsArray = explode(',', $gpioConfig['soil_sensor_pins']);
         $relayPinsArray = explode(',', $gpioConfig['relay_pins']);
+        $dryRawArray = explode(',', $gpioConfig['dry_raw']);
+        $wetRawArray = explode(',', $gpioConfig['wet_raw']);
         $soilPinsArray = array_pad($soilPinsArray, PHP_CHANNEL_COUNT, '0');
         $relayPinsArray = array_pad($relayPinsArray, PHP_CHANNEL_COUNT, '0');
         $canvasId = 'history-' . preg_replace('/[^a-zA-Z0-9_-]/', '-', $deviceId);
@@ -569,6 +634,8 @@ foreach ($devices as $device) {
                   <div class="label">Sensor raw</div>
                   <div class="value"><?= (int) ($channel['soil_raw'] ?? 0) ?></div>
                   <div class="muted">ADC12 <?= (int) ($channel['soil_raw12'] ?? 0) ?></div>
+                  <div class="muted">Trocken: <?= (int) ($channel['dry_raw'] ?? 0) ?></div>
+                  <div class="muted">Nass: <?= (int) ($channel['wet_raw'] ?? 0) ?></div>
                 </div>
               </div>
               <form method="post">
@@ -595,6 +662,29 @@ foreach ($devices as $device) {
                   <input id="channel_name_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="channel_name" type="text" value="<?= htmlspecialchars($channelNamesArray[$channelIndex] ?? '') ?>" placeholder="z.B. Tomaten">
                   <button type="submit">Name speichern</button>
                 </form>
+              </section>
+
+              <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+              <section class="calibration-config">
+                <h4>Kalibrierung für Kanal <?= $channelIndex + 1 ?></h4>
+                <form method="post">
+                  <input name="api_key" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key">
+                  <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
+                  <input type="hidden" name="action" value="save_channel_calibration_config">
+                  <input type="hidden" name="channel_index" value="<?= $channelIndex ?>">
+
+                  <label for="dry_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Trocken (Luft) Wert</label>
+                  <input id="dry_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="dry_raw_value" type="number" value="<?= htmlspecialchars($dryRawArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+
+                  <label for="wet_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>">Nass (Wasser) Wert</label>
+                  <input id="wet_raw_<?= htmlspecialchars($deviceId) ?>_<?= $channelIndex ?>" name="wet_raw_value" type="number" value="<?= htmlspecialchars($wetRawArray[$channelIndex] ?? '') ?>" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>
+
+                  <button type="submit" <?= $state['key'] === 'offline' ? 'disabled' : '' ?>>Kalibrierung speichern</button>
+                </form>
+                <?php if ($state['key'] === 'offline'): ?>
+                  <p class="muted" style="margin-top: 10px;">Gerät ist offline. Kalibrierung kann nicht geändert werden.</p>
+                <?php endif; ?>
               </section>
 
               <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">

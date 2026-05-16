@@ -12,10 +12,13 @@ constexpr uint8_t CHANNEL_COUNT = 4;
 // ESP32 ADC1 pins. ADC1 keeps working while WiFi is active.
 uint8_t g_soilSensorPins[CHANNEL_COUNT] = {34, 35, 36, 39};
 
+// Calibration values for each sensor.
+int g_dryRaw[CHANNEL_COUNT] = {0, 0, 0, 0};
+int g_wetRaw[CHANNEL_COUNT] = {626, 626, 626, 626};
+
 // Relay/MOSFET gate pins. Avoid GPIO0, GPIO2, GPIO12, GPIO15, GPIO1, GPIO3,
 // and flash pins GPIO6-GPIO11 on classic ESP32 boards.
 uint8_t g_relayPins[CHANNEL_COUNT] = {26, 25, 32, 33};
-
 // This relay board is active LOW: GPIO LOW -> relay ON, GPIO HIGH -> relay OFF.
 constexpr bool RELAY_ACTIVE_LOW = true;
 
@@ -27,10 +30,6 @@ constexpr uint32_t BATTERY_DIVIDER_TOP_OHMS = 100000;
 constexpr uint32_t BATTERY_DIVIDER_BOTTOM_OHMS = 100000;
 constexpr uint16_t BATTERY_EMPTY_MV = 3300;
 constexpr uint16_t BATTERY_FULL_MV = 4200;
-
-// Calibrate each sensor with Serial Monitor readings.
-constexpr int DRY_RAW[CHANNEL_COUNT] = {0, 0, 0, 0};
-constexpr int WET_RAW[CHANNEL_COUNT] = {626, 626, 626, 626};
 
 constexpr int START_WATERING_PERCENT = 35;
 constexpr int STOP_WATERING_PERCENT = 55;
@@ -87,7 +86,7 @@ WebServer configServer(80);
 
 void connectWifi();
 void loadGpioConfig();
-void saveGpioConfig(const String& soilPinsStr, const String& relayPinsStr);
+void saveGpioConfig(const String& soilPinsStr, const String& relayPinsStr, const String& dryRawStr, const String& wetRawStr);
 void startConfigAp();
 
 const char *pumpModeValue(PumpMode mode) {
@@ -135,11 +134,11 @@ void initPumpsOff() {
 }
 
 int rawToMoisturePercent(uint8_t channel, int raw) {
-  if (channel >= CHANNEL_COUNT || WET_RAW[channel] == DRY_RAW[channel]) {
+  if (channel >= CHANNEL_COUNT || g_wetRaw[channel] == g_dryRaw[channel]) {
     return 0;
   }
 
-  const int percent = (raw - DRY_RAW[channel]) * 100 / (WET_RAW[channel] - DRY_RAW[channel]);
+  const int percent = (raw - g_dryRaw[channel]) * 100 / (g_wetRaw[channel] - g_dryRaw[channel]);
   return constrain(percent, 0, 100);
 }
 
@@ -346,6 +345,10 @@ String buildTelemetryJson() {
     json += state.raw;
     json += ",\"soil_raw12\":";
     json += state.raw12;
+    json += ",\"dry_raw\":";
+    json += g_dryRaw[channel];
+    json += ",\"wet_raw\":";
+    json += g_wetRaw[channel];
     json += ",\"pump_on\":";
     json += state.pumpOn ? "true" : "false";
     json += ",\"pump_mode\":\"";
@@ -709,6 +712,26 @@ void parsePinString(const String& pinString, uint8_t* pinArray, uint8_t count) {
     }
 }
 
+// Helper to parse comma-separated string to array of int
+void parseIntString(const String& intString, int* intArray, uint8_t count) {
+    int currentIntIndex = 0;
+    int lastCommaIndex = -1;
+    for (int i = 0; i < intString.length() && currentIntIndex < count; ++i) {
+        if (intString.charAt(i) == ',') {
+            intArray[currentIntIndex++] = intString.substring(lastCommaIndex + 1, i).toInt();
+            lastCommaIndex = i;
+        }
+    }
+    if (currentIntIndex < count) { // Get the last number
+        intArray[currentIntIndex++] = intString.substring(lastCommaIndex + 1).toInt();
+    }
+    // Fill remaining with 0 if string was shorter
+    for (; currentIntIndex < count; ++currentIntIndex) {
+        intArray[currentIntIndex] = 0;
+    }
+}
+
+
 void loadGpioConfig() {
     String soilPinsStr = preferences.getString("soil_pins", "");
     String relayPinsStr = preferences.getString("relay_pins", "");
@@ -728,9 +751,28 @@ void loadGpioConfig() {
     } else {
         Serial.println(F("No custom relay pins found, using defaults."));
     }
+
+    String dryRawStr = preferences.getString("dry_raw", "");
+    String wetRawStr = preferences.getString("wet_raw", "");
+
+    if (dryRawStr.length() > 0) {
+        parseIntString(dryRawStr, g_dryRaw, CHANNEL_COUNT);
+        Serial.print(F("Loaded custom DRY_RAW values: "));
+        Serial.println(dryRawStr);
+    } else {
+        Serial.println(F("No custom DRY_RAW values found, using defaults."));
+    }
+
+    if (wetRawStr.length() > 0) {
+        parseIntString(wetRawStr, g_wetRaw, CHANNEL_COUNT);
+        Serial.print(F("Loaded custom WET_RAW values: "));
+        Serial.println(wetRawStr);
+    } else {
+        Serial.println(F("No custom WET_RAW values found, using defaults."));
+    }
 }
 
-void saveGpioConfig(const String& soilPinsStr, const String& relayPinsStr) {
+void saveGpioConfig(const String& soilPinsStr, const String& relayPinsStr, const String& dryRawStr, const String& wetRawStr) {
     preferences.putString("soil_pins", soilPinsStr);
     preferences.putString("relay_pins", relayPinsStr);
     Serial.println(F("New GPIO configuration saved to preferences. Rebooting to apply..."));
@@ -835,6 +877,8 @@ void pollGpioConfig() {
 
     String newSoilPinsStr = extractJsonString(response, "soil_sensor_pins");
     String newRelayPinsStr = extractJsonString(response, "relay_pins");
+    String newDryRawStr = extractJsonString(response, "dry_raw");
+    String newWetRawStr = extractJsonString(response, "wet_raw");
 
     String currentSoilPinsStr;
     for (uint8_t i = 0; i < CHANNEL_COUNT; ++i) {
@@ -846,10 +890,21 @@ void pollGpioConfig() {
         currentRelayPinsStr += String(g_relayPins[i]);
         if (i < CHANNEL_COUNT - 1) currentRelayPinsStr += ",";
     }
+    String currentDryRawStr;
+    for (uint8_t i = 0; i < CHANNEL_COUNT; ++i) {
+        currentDryRawStr += String(g_dryRaw[i]);
+        if (i < CHANNEL_COUNT - 1) currentDryRawStr += ",";
+    }
+    String currentWetRawStr;
+    for (uint8_t i = 0; i < CHANNEL_COUNT; ++i) {
+        currentWetRawStr += String(g_wetRaw[i]);
+        if (i < CHANNEL_COUNT - 1) currentWetRawStr += ",";
+    }
 
-    if (newSoilPinsStr != currentSoilPinsStr || newRelayPinsStr != currentRelayPinsStr) {
-        Serial.println(F("New GPIO configuration received. Saving and rebooting..."));
-        saveGpioConfig(newSoilPinsStr, newRelayPinsStr);
+    if (newSoilPinsStr != currentSoilPinsStr || newRelayPinsStr != currentRelayPinsStr ||
+        newDryRawStr != currentDryRawStr || newWetRawStr != currentWetRawStr) {
+        Serial.println(F("New GPIO or calibration configuration received. Saving and rebooting..."));
+        saveGpioConfig(newSoilPinsStr, newRelayPinsStr, newDryRawStr, newWetRawStr);
     } else {
         Serial.println(F("GPIO configuration is up to date."));
     }
