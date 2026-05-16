@@ -189,6 +189,11 @@ function historyPath(string $dataDir, string $deviceId): string
     return $dataDir . '/history-' . deviceFileId($deviceId) . '.jsonl';
 }
 
+function configPath(string $dataDir): string
+{
+    return $dataDir . '/config.json';
+}
+
 function deviceStatus(array $status): array
 {
     $lastSeen = isset($status['received_at']) ? strtotime((string) $status['received_at']) : 0;
@@ -660,16 +665,24 @@ foreach ($devices as $device) {
       <span class="refresh-ctrl">
         <input type="checkbox" id="autoRefreshToggle" checked>
         <label for="autoRefreshToggle">Auto</label>
-        <span id="refreshCountdown">15</span>s
-        <span id="refreshCountdown"><?= DASHBOARD_REFRESH_SECONDS ?></span>s
+        <span id="refreshCountdown"><?= $refreshInterval ?></span>s
       </span>
     </div>
   </div>
 
   <div class="api-bar">
-    <label for="globalApiKey">API Key</label>
-    <input id="globalApiKey" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key eingeben…" autocomplete="current-password">
-    <button type="button" id="saveApiKeyBtn" class="pill" style="cursor:pointer; border:1px solid #c6d5ce; background:#f0f4f2;">Speichern</button>
+    <form class="ajax-settings-form" style="display:flex; align-items:center; gap:8px; width:100%">
+      <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
+      <input type="hidden" name="action" value="save_dashboard_config">
+      
+      <label for="globalApiKey">API Key</label>
+      <input id="globalApiKey" type="password" value="<?= htmlspecialchars($dashboardKey) ?>" placeholder="API key eingeben…" autocomplete="current-password" style="flex:1; max-width:200px">
+      
+      <label for="refreshIntervalInput">Refresh (s)</label>
+      <input id="refreshIntervalInput" name="refresh_seconds" type="number" value="<?= $refreshInterval ?>" min="5" style="width:60px; border:1px solid #c6d5ce; border-radius:5px; padding:5px 8px;">
+
+      <button type="submit" class="pill" style="cursor:pointer; border:1px solid #c6d5ce; background:#f0f4f2;">Speichern</button>
+    </form>
   </div>
 
   <?php if ($dashboardError): ?><p class="error"><?= htmlspecialchars($dashboardError) ?></p><?php endif; ?>
@@ -875,14 +888,6 @@ $(function() {
     window.location.replace(url.href);
   }
 
-  $('#saveApiKeyBtn').on('click', function() {
-    const key = $('#globalApiKey').val();
-    localStorage.setItem('hydrosense_api_key', key);
-    const url = new URL(window.location.href);
-    url.searchParams.set('api_key', key);
-    window.location.href = url.href;
-  });
-
   $('#globalApiKey').on('input change blur', function() {
     syncApiKey($(this).val());
   });
@@ -942,6 +947,18 @@ $(function() {
         console.log('[Response]', res);
         console.log('Status: Success');
         
+        if (action === 'save_dashboard_config') {
+           const newKey = $('#globalApiKey').val();
+           localStorage.setItem('hydrosense_api_key', newKey);
+           if (res.refresh_seconds) {
+              globalRefreshInterval = parseInt(res.refresh_seconds);
+              timeLeft = globalRefreshInterval;
+           }
+           const url = new URL(window.location.href);
+           url.searchParams.set('api_key', newKey);
+           window.history.replaceState({}, '', url);
+        }
+
         const msgText = res.message || 'Einstellung gespeichert.';
         if ($('#successMsg').length === 0) {
           $('<div class="success" id="successMsg"></div>').text(msgText).insertAfter('.api-bar');
@@ -958,13 +975,14 @@ $(function() {
       .always(() => { console.groupEnd(); });
   });
 
-  let timeLeft = 15;
+  let globalRefreshInterval = <?= $refreshInterval ?>;
+  let timeLeft = globalRefreshInterval;
   const $countdown = $('#refreshCountdown');
   const $toggle = $('#autoRefreshToggle');
 
   setInterval(() => {
-    if (!$toggle.is(':checked')) { $countdown.text(15); return; }
-    if (--timeLeft <= 0) { timeLeft = 15; refreshData(); }
+    if (!$toggle.is(':checked')) { $countdown.text(globalRefreshInterval); return; }
+    if (--timeLeft <= 0) { timeLeft = globalRefreshInterval; refreshData(); }
     $countdown.text(timeLeft);
   }, 1000);
 
