@@ -758,7 +758,7 @@ foreach ($devices as $device) {
 
                   <div class="settings-sec">
                     <h4>Kalibrierung</h4>
-                    <form method="post">
+                    <form method="post" class="ajax-calibration-form">
                       <input name="api_key" type="hidden" value="<?= htmlspecialchars($dashboardKey) ?>">
                       <input type="hidden" name="device_id" value="<?= htmlspecialchars($deviceId) ?>">
                       <input type="hidden" name="action" value="save_channel_calibration_config">
@@ -861,6 +861,29 @@ $(function() {
   }
 
   initCharts();
+
+  // Handle calibration form submission via jQuery AJAX
+  $(document).on('submit', '.ajax-calibration-form', function(e) {
+    e.preventDefault();
+    const $form = $(this);
+    const formData = $form.serialize();
+    console.log('HydroSense: Calibration save initiated...', $form.serializeArray());
+
+    $.post(window.location.href, formData)
+      .done(function() {
+        console.log('HydroSense: Calibration save successful.');
+        // Visual feedback: trigger the success message UI
+        if ($('#successMsg').length === 0) {
+          $('<div class="success" id="successMsg">Kalibrierung gespeichert.</div>').insertAfter('.api-bar');
+        } else {
+          $('#successMsg').text('Kalibrierung gespeichert.').show();
+        }
+        setTimeout(() => { $('#successMsg').fadeOut(400); }, 3000);
+      })
+      .fail(function(xhr) {
+        console.error('HydroSense: Calibration save failed:', xhr.status, xhr.statusText);
+      });
+  });
 
   let timeLeft = 15;
   const $countdown = $('#refreshCountdown');
