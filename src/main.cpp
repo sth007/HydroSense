@@ -499,18 +499,25 @@ void setupConfigServer() {
 }
 
 void startConfigAp() {
-  if (configApActive) {
+  if (configApSsid.length() == 0) {
+    uint64_t mac = ESP.getEfuseMac();
+    char suffix[7] = {};
+    snprintf(suffix, sizeof(suffix), "%06X", static_cast<unsigned int>(mac & 0xFFFFFF));
+    configApSsid = String("HydroSense-") + suffix;
+  }
+
+  WiFi.mode(WIFI_AP_STA);
+  const bool wasActive = configApActive;
+  configApActive = WiFi.softAP(configApSsid.c_str(), CONFIG_AP_PASSWORD);
+
+  if (!configApActive) {
+    Serial.println(F("Config hotspot failed to start"));
     return;
   }
 
-  uint64_t mac = ESP.getEfuseMac();
-  char suffix[7] = {};
-  snprintf(suffix, sizeof(suffix), "%06X", static_cast<unsigned int>(mac & 0xFFFFFF));
-  configApSsid = String("HydroSense-") + suffix;
-
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(configApSsid.c_str(), CONFIG_AP_PASSWORD);
-  configApActive = true;
+  if (wasActive) {
+    return;
+  }
 
   Serial.print(F("Config hotspot started: "));
   Serial.print(configApSsid);
@@ -594,19 +601,19 @@ void connectWifi() {
     return;
   }
 
+  startConfigAp();
+
   if (wifiSsid.length() == 0) {
-    startConfigAp();
     return;
   }
 
   const unsigned long now = millis();
   if (lastWifiAttemptMs != 0 && now - lastWifiAttemptMs < WIFI_RECONNECT_INTERVAL_MS) {
-    startConfigAp();
     return;
   }
   lastWifiAttemptMs = now;
 
-  WiFi.mode(configApActive ? WIFI_AP_STA : WIFI_STA);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
   Serial.print(F("WiFi connecting"));
 
@@ -623,7 +630,6 @@ void connectWifi() {
     stopConfigApIfConnected();
   } else {
     Serial.println(F("WiFi connection failed"));
-    startConfigAp();
   }
 }
 
@@ -732,8 +738,11 @@ void loop() {
   const unsigned long now = millis();
   configServer.handleClient();
 
-  if (WiFi.status() != WL_CONNECTED && now - lastWifiAttemptMs >= WIFI_RECONNECT_INTERVAL_MS) {
-    connectWifi();
+  if (WiFi.status() != WL_CONNECTED) {
+    startConfigAp();
+    if (now - lastWifiAttemptMs >= WIFI_RECONNECT_INTERVAL_MS) {
+      connectWifi();
+    }
   } else if (WiFi.status() == WL_CONNECTED) {
     stopConfigApIfConnected();
   }
