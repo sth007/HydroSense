@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hydrosense",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8077", "-t", "/Users/zaour/Documents/GitHub/HydroSense/server"],
+      "port": 8077
+    }
+  ]
+}
